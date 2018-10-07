@@ -1,0 +1,13 @@
+cpu M6809
+
+serial 6850
+serial.data 0x83ff
+serial.control 0x83fe
+serial.map 1
+
+terminal.caps 1
+
+memory.rom.from 0xE000
+memory.rom.to 0xffff
+memory.ram.from 0x0000
+memory.ram.to 0x7fff

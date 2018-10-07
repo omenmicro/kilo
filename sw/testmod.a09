@@ -1,0 +1,23 @@
+; KILO ROM Module
+; Needs these instructions on the begin:
+            .CSEG   
+            ALIGN   256 
+            JMP     testmod ; Jump to the begin
+
+; Needed signature: MOD9 + module name + trailing zero
+            .CSTR   "MOD9TestMod" 
+
+; Monitor vectors:
+MRESET      EQU     $E000 
+MSERIN      EQU     $E003 
+MSEROUT     EQU     $E006 
+MPRINT2     EQU     $E009 
+MPRINTX     EQU     $E00C 
+MPRIMM      EQU     $E00F 
+
+; here are your space:
+TESTMOD:            
+            JSR     $E00F 
+            .CSTR   "Test module",$0d,$0a 
+            JMP     $e000 
+

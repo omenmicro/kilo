@@ -1,0 +1,12 @@
+0000                          .CSEG   
+0000                          ALIGN   256   
+0000   0E 0E                  JMP   testmod   
+0002   4D 4F 44 39 54 65 73 74 4D 6F 64 00 .CSTR   "MOD9TestMod"   
+000E                TESTMOD:   
+000E   BD E0 0F               JSR   $E00F   
+0011   54 65 73 74 20 6D 6F 64 75 6C 65 0D 0A 00 .CSTR   "Test module",$0d,$0a   
+001F   7E E0 00               JMP   $e000   
+
+
+TESTMOD:            000E DEFINED AT LINE 5
+                    > USED AT LINE 3

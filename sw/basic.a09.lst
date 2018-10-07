@@ -1,0 +1,1840 @@
+0000                          ;NAM	TB01V137
+0000                          ;*	WRITTEN 20-OCT-77 BY JOHN BYRNS
+0000                          ;*	REVISED 30-DEC-77
+0000                          ;*	REVISED 18-JAN-78
+0000                          ;*	REVISED 10-APR-78
+0000                          ;*	REVISED 08-MAY-79 TO ELIMINATE USE OF SP
+0000                          ;*	REVISED 24-JAN-80 TO USE 6801 ON CHIP RAM
+0000                          ;*	REVISED 26-JAN-80 FOR NEW 6801 INSTRUCTIONS
+0000                          ;*	REVISED 24-JUL-81 FOR WHISTON BOARD
+0000                          ;*	REVISED 24-SEP-81 INCLUDE USER FUNCTION
+0000                          ;*	REVISED 08-APR-82 MAKE STANDALONE INCLUDE HEX CONSTANTS AND MEM FUNCTION
+0000                          ;*	REVISED 21-NOV-84 FOR 6809
+0000                          ;*	REVISED FEB 94 ADAPTED TO SIMULATOR AND BUGFIXES BY L.C. BENSCHOP.
+0000                          ;*
+0000                          ;.engine kilo
+0000                EOL:      EQU   $04   
+0000                ETX:      EQU   $03   
+0000                SPACE:    EQU   $20   
+0000                CR:       EQU   $0D   
+0000                LF:       EQU   $0A   
+0000                BS:       EQU   $08   
+0000                CAN:      EQU   $18   
+0000                BELL:     EQU   $07   
+0000                FILL:     EQU   $00   
+0000                DEL:      EQU   $7F   
+0000                BSIZE:    EQU   73   
+0000                STKCUS:   EQU   48   
+0000                          ;*
+0000                BACIA:    EQU   $83FE   
+0000                RMCR:     EQU   bACIA   
+0000                TRCS:     EQU   bACIA   
+0000                RECEV:    EQU   bACIA+1   
+0000                TRANS:    EQU   bACIA+1   
+0000                CNTL1:    EQU   $03   
+0000                CNTL2:    EQU   $15   
+0000                RDRF:     EQU   $01   
+0000                ORFE:     EQU   $20   
+0000                TDRE:     EQU   $02   
+0000                          ;* EDIT THE FOLLOWING EQUATES TO REFLECT THE
+0000                          ;* DESIRED ROM AND RAM LAYOUT
+0000                LORAM:    EQU   $0080   
+0000                BUFFER:   EQU   $0200   
+0000                RAMSIZ:   EQU   $2000   
+0000                ROMADR:   EQU   $f000   
+0000                          ;*
+0000                RAMBEG:   EQU   BUFFER+BSIZE   
+0000                RAMEND:   EQU   BUFFER+RAMSIZ   
+0000                          ;*
+0000                RAMPAT:   EQU   $AA0F   
+0000                ROMPAT:   EQU   $F055   
+0000                          ;*
+0000                          ;	ORG	LORAM
+0000                          .BSSEG   
+0000                USRBAS:   RMB   2   
+0002                USRTOP:   RMB   2   
+0004                STKLIM:   RMB   2   
+0006                STKTOP:   RMB   2   
+0008                CURSOR:   RMB   2   
+000A                SAVESP:   RMB   2   
+000C                LINENB:   RMB   2   
+000E                SCRTCH:   RMB   2   
+0010                CHAR:     RMB   2   
+0012                ZONE:     RMB   1   
+0013                MODE:     RMB   1   
+0014                RESRVD:   RMB   1   
+0015                LOEND:    EQU   $   
+0015                          ;*
+0000                          .CSEG   
+0000                          ;	ORG     ROMADR
+0000                          ALIGN   256   
+0000                          .ENT   $   
+0000   0E 14        BASIC:    JMP   SETUP   
+0002   4D 4F 44 39 42 41 53 49 43 00 .CSTR   "MOD9BASIC"   
+000C   10 DE 06     WARMS:    LDS   STKTOP   
+000F   BD 07 E3               JSR   INTEEE   
+0012   20 13                  BRA   WMS05   
+0014   10 CE 21 CC  SETUP:    LDS   #RAMEND-52   
+0018   10 DF 06     SET03:    STS   STKTOP   
+001B   BD 07 E3               JSR   INTEEE   
+001E   CC 02 49     CLEAR:    LDD   #RAMBEG   
+0021   DD 00                  STD   USRBAS   
+0023   DD 02                  STD   USRTOP   
+0025   DD 04        CLR02:    STD   STKLIM   
+0027   BD 01 3E     WMS05:    JSR   CRLF   
+002A   8E 00 82               LDX   #VSTR   
+002D   BD 01 37               JSR   PUTSTR   
+0030   10 DE 06     CMDB:     LDS   STKTOP   
+0033   0F 13                  CLR   MODE   
+0035   BD 01 3E               JSR   CRLF   
+0038   9E 00                  LDX   USRBAS   
+003A   9F 08                  STX   CURSOR   
+003C   8E 00 00     CMDE:     LDX   #0000   
+003F   9F 0C                  STX   LINENB   
+0041   0D 13                  TST   MODE   
+0043   26 05                  BNE   CMD01   
+0045   86 3A                  LDA   #":"   
+0047   BD 07 A8               JSR   PUTCHR   
+004A   BD 01 8E     CMD01:    JSR   GETLIN   
+004D   BD 02 E8               JSR   TSTNBR   
+0050   24 0E                  BCC   CMD02   
+0052   29 2B                  BVS   CMD05   
+0054   BD 02 59               JSR   SKIPSP   
+0057   81 04                  CMPA   #EOL   
+0059   27 E1                  BEQ   CMDE   
+005B   BD 02 0B               JSR   MSLINE   
+005E   20 D0                  BRA   CMDB   
+0060   34 10        CMD02:    PSHS   X   
+0062   9E 02                  LDX   USRTOP   
+0064   9C 04                  CMPX   STKLIM   
+0066   35 10                  PULS   X   
+0068   27 03                  BEQ   CMD03   
+006A   7E 01 5E               JMP   ERRORR   
+006D   C3 00 00     CMD03:    ADDD   #0   
+0070   27 0D                  BEQ   CMD05   
+0072   34 06        CMD04:    PSHS   D   
+0074   83 27 0F               SUBD   #9999   
+0077   35 06                  PULS   D   
+0079   22 04                  BHI   CMD05   
+007B   8D 10                  BSR   EDITOR   
+007D   20 BD                  BRA   CMDE   
+007F   7E 01 55     CMD05:    JMP   ERRORS   
+0082   54 49 4E 59 20 56 31 2E 33 37 VSTR:   DB   "TINY V1.37"   
+008C   04                     FCB   EOL   
+008D                          ;******************************
+008D                          ;******************************
+008D   34 06        EDITOR:   PSHS   D   
+008F   BD 02 59               JSR   SKIPSP   
+0092   9F 0E                  STX   SCRTCH   
+0094   A6 60                  LDA   0,S   
+0096   9E 08                  LDX   CURSOR   
+0098   9C 02                  CMPX   USRTOP   
+009A   27 05                  BEQ   ED00   
+009C   10 A3 00               CMPD   0,X   
+009F   24 02                  BCC   ED01   
+00A1   9E 00        ED00:     LDX   USRBAS   
+00A3   BD 03 C2     ED01:     JSR   FNDLIN   
+00A6   9F 08                  STX   CURSOR   
+00A8   25 22                  BCS   ED04   
+00AA   9F 0A                  STX   SAVESP   
+00AC   30 02                  LEAX   2,X   
+00AE   A6 80        ED02:     LDA   ,X+   
+00B0   81 04                  CMPA   #EOL   
+00B2   26 FA                  BNE   ED02   
+00B4   9C 02        ED03:     CMPX   USRTOP   
+00B6   27 0E                  BEQ   ED35   
+00B8   A6 80                  LDA   ,X+   
+00BA   9F 10                  STX   CHAR   
+00BC   9E 0A                  LDX   SAVESP   
+00BE   A7 80                  STA   ,X+   
+00C0   9F 0A                  STX   SAVESP   
+00C2   9E 10                  LDX   CHAR   
+00C4   20 EE                  BRA   ED03   
+00C6   9E 0A        ED35:     LDX   SAVESP   
+00C8   9F 02                  STX   USRTOP   
+00CA   9F 04                  STX   STKLIM   
+00CC   9E 0E        ED04:     LDX   SCRTCH   
+00CE   C6 FF                  LDB   #-1   
+00D0   5C           ED05:     INCB   
+00D1   A6 80                  LDA   ,X+   
+00D3   81 04                  CMPA   #EOL   
+00D5   26 F9                  BNE   ED05   
+00D7   5D                     TSTB   
+00D8   26 03                  BNE   ED55   
+00DA   32 62                  LEAS   2,S   
+00DC   39                     RTS   
+00DD   30 1F        ED55:     LEAX   -1,X   
+00DF   CB 04                  ADDB   #4   
+00E1   30 1F        ED06:     LEAX   -1,X   
+00E3   5A                     DECB   
+00E4   A6 00                  LDA   0,X   
+00E6   81 20                  CMPA   #SPACE   
+00E8   27 F7                  BEQ   ED06   
+00EA   86 04                  LDA   #EOL   
+00EC   A7 01                  STA   1,X   
+00EE   4F                     CLRA   
+00EF   9E 02                  LDX   USRTOP   
+00F1   9F 10                  STX   CHAR   
+00F3   D3 02                  ADDD   USRTOP   
+00F5   DD 02                  STD   USRTOP   
+00F7   DD 04                  STD   STKLIM   
+00F9   BD 03 60               JSR   TSTSTK   
+00FC   24 07                  BCC   ED07   
+00FE   9F 02                  STX   USRTOP   
+0100   9F 04                  STX   STKLIM   
+0102   7E 01 4D               JMP   ERRORF   
+0105   9E 02        ED07:     LDX   USRTOP   
+0107   9F 0A        ED08:     STX   SAVESP   
+0109   9E 10                  LDX   CHAR   
+010B   9C 08                  CMPX   CURSOR   
+010D   27 0A                  BEQ   ED09   
+010F   A6 82                  LDA   ,-X   
+0111   9F 10                  STX   CHAR   
+0113   9E 0A                  LDX   SAVESP   
+0115   A7 82                  STA   ,-X   
+0117   20 EE                  BRA   ED08   
+0119   35 06        ED09:     PULS   D   
+011B   9E 08                  LDX   CURSOR   
+011D   ED 81                  STD   ,X++   
+011F   9F 10                  STX   CHAR   
+0121   9E 0E        ED10:     LDX   SCRTCH   
+0123   A6 80                  LDA   ,X+   
+0125   9F 0E                  STX   SCRTCH   
+0127   9E 10                  LDX   CHAR   
+0129   A7 80                  STA   ,X+   
+012B   9F 10                  STX   CHAR   
+012D   81 04                  CMPA   #EOL   
+012F   26 F0                  BNE   ED10   
+0131   39                     RTS   
+0132                          ;******************************
+0132                          ;******************************
+0132   BD 07 A8     PUTS01:   JSR   PUTCHR   
+0135   30 01                  LEAX   1,X   
+0137   A6 00        PUTSTR:   LDA   0,X   
+0139   81 04                  CMPA   #EOL   
+013B   26 F5                  BNE   PUTS01   
+013D   39                     RTS   
+013E                          ;******************************
+013E                          ;******************************
+013E   8E 01 46     CRLF:     LDX   #CRLFST   
+0141   8D F4                  BSR   PUTSTR   
+0143   0F 12                  CLR   ZONE   
+0145   39                     RTS   
+0146   0D 0A 7F 00 00 00 04 CRLFST:   FCB   CR,LF,DEL,FILL,FILL,FILL,EOL   
+014D                          ;******************************
+014D                          ;******************************
+014D   8D 24        ERRORF:   BSR   ER01   
+014F   53 4F 52 52 59         DB   "SORRY"   
+0154   04                     FCB   EOL   
+0155   8D 1C        ERRORS:   BSR   ER01   
+0157   57 48 41 54 20 3F      DB   "WHAT ?"   
+015D   04                     FCB   EOL   
+015E   8D 13        ERRORR:   BSR   ER01   
+0160   48 4F 57 20 3F         DB   "HOW ?"   
+0165   04                     FCB   EOL   
+0166   8D 0B        BREAK:    BSR   ER01   
+0168   42 52 45 41 4B         DB   "BREAK"   
+016D   04                     FCB   EOL   
+016E                          END   BSR	ER01   
+016E   53 54 4F 50            DB   "STOP"   
+0172   04                     FCB   EOL   
+0173   8D C9        ER01:     BSR   CRLF   
+0175   86 07                  LDA   #BELL   
+0177   BD 07 A8               JSR   PUTCHR   
+017A   DC 0C                  LDD   LINENB   
+017C   BD 06 5C               JSR   PRNT4   
+017F   86 20                  LDA   #SPACE   
+0181   BD 07 A8               JSR   PUTCHR   
+0184   35 10                  PULS   X   
+0186   8D AF                  BSR   PUTSTR   
+0188   8D B4                  BSR   CRLF   
+018A   0E 30                  JMP   CMDB   
+018C                          ;******************************
+018C                          ;******************************
+018C   8D B0        GL00:     BSR   CRLF   
+018E   8E 02 00     GETLIN:   LDX   #BUFFER   
+0191   BD 07 9E     GL03:     JSR   GETCHR   
+0194   81 20                  CMPA   #SPACE   
+0196   25 14                  BCS   GL05   
+0198   81 7F                  CMPA   #$7F   
+019A   27 F5                  BEQ   GL03   
+019C   8C 02 48               CMPX   #BUFFER+BSIZE-1   
+019F   26 04                  BNE   GL04   
+01A1   86 07                  LDA   #BELL   
+01A3   20 02                  BRA   GL02   
+01A5   A7 80        GL04:     STA   ,X+   
+01A7   BD 07 A8     GL02:     JSR   PUTCHR   
+01AA   20 E5                  BRA   GL03   
+01AC   81 08        GL05:     CMPA   #BS   
+01AE   27 24                  BEQ   GL07   
+01B0   81 18                  CMPA   #CAN   
+01B2   27 D8                  BEQ   GL00   
+01B4   81 0A                  CMPA   #LF   
+01B6   27 31                  BEQ   GL09   
+01B8   81 0D                  CMPA   #CR   
+01BA   26 D5                  BNE   GL03   
+01BC   0D 13                  TST   MODE   
+01BE   27 05                  BEQ   GL06   
+01C0   BD 07 A8               JSR   PUTCHR   
+01C3   20 07                  BRA   GL08   
+01C5   34 10        GL06:     PSHS   X   
+01C7   BD 01 3E               JSR   CRLF   
+01CA   35 10                  PULS   X   
+01CC   86 04        GL08:     LDA   #EOL   
+01CE   A7 00                  STA   0,X   
+01D0   8E 02 00               LDX   #BUFFER   
+01D3   39                     RTS   
+01D4   8C 02 00     GL07:     CMPX   #BUFFER   
+01D7   27 B8                  BEQ   GL03   
+01D9   30 1F                  LEAX   -1,X   
+01DB   86 08                  LDA   #BS   
+01DD   BD 07 A8               JSR   PUTCHR   
+01E0   86 20                  LDA   #SPACE   
+01E2   BD 07 A8               JSR   PUTCHR   
+01E5   86 08                  LDA   #BS   
+01E7   20 BE                  BRA   GL02   
+01E9   1A 01        GL09:     ORCC   #$01   
+01EB   06 13                  ROR   MODE   
+01ED   20 B8                  BRA   GL02   
+01EF                          ;******************************
+01EF                          ;******************************
+01EF   30 01        REM00:    LEAX   1,X   
+01F1   8D 66        REM:      BSR   SKIPSP   
+01F3   81 04                  CMPA   #EOL   
+01F5   26 F8                  BNE   REM00   
+01F7   BD 05 2F     ENDSMT:   JSR   TSTEOL   
+01FA   96 0C        ENDS02:   LDA   LINENB   
+01FC   9A 0D                  ORA   LINENB+1   
+01FE   27 14                  BEQ   REM09   
+0200   9C 02        REM05:    CMPX   USRTOP   
+0202   26 03                  BNE   NXTLIN   
+0204   7E 01 5E               JMP   ERRORR   
+0207   EC 81        NXTLIN:   LDD   ,X++   
+0209   DD 0C                  STD   LINENB   
+020B   BD 07 9A     MSLINE:   JSR   TSTBRK   
+020E   8D 08                  BSR   IFAN   
+0210   25 03                  BCS   IMPLET   
+0212   34 06                  PSHS   D   
+0214   39           REM09:    RTS   
+0215   7E 05 40     IMPLET:   JMP   LET   
+0218                          ;******************************
+0218                          ;******************************
+0218   8D 3F        IFAN:     BSR   SKIPSP   
+021A   9F 08                  STX   CURSOR   
+021C   8E 07 35               LDX   #VERBT   
+021F   A6 80        FAN00:    LDA   ,X+   
+0221   81 04                  CMPA   #EOL   
+0223   26 05                  BNE   FAN04   
+0225   9E 08                  LDX   CURSOR   
+0227   1A 01                  ORCC   #$01   
+0229   39                     RTS   
+022A   9F 10        FAN04:    STX   CHAR   
+022C   9E 08                  LDX   CURSOR   
+022E   9F 0E                  STX   SCRTCH   
+0230   9E 0E        FAN05:    LDX   SCRTCH   
+0232   A1 00                  CMPA   0,X   
+0234   26 15                  BNE   FAN07   
+0236   30 01                  LEAX   1,X   
+0238   9F 0E                  STX   SCRTCH   
+023A   9E 10                  LDX   CHAR   
+023C   A6 80                  LDA   ,X+   
+023E   9F 10                  STX   CHAR   
+0240   81 04                  CMPA   #EOL   
+0242   26 EC                  BNE   FAN05   
+0244   EC 00                  LDD   0,X   
+0246   9E 0E                  LDX   SCRTCH   
+0248   1C FE                  ANDCC   #$FE   
+024A   39                     RTS   
+024B   9E 10        FAN07:    LDX   CHAR   
+024D   A6 80        FAN08:    LDA   ,X+   
+024F   81 04                  CMPA   #EOL   
+0251   26 FA                  BNE   FAN08   
+0253   30 02                  LEAX   2,X   
+0255   20 C8                  BRA   FAN00   
+0257                          ;******************************
+0257                          ;******************************
+0257   30 01        NXTNSP:   LEAX   1,X   
+0259   A6 00        SKIPSP:   LDA   0,X   
+025B   81 20                  CMPA   #SPACE   
+025D   27 F8                  BEQ   NXTNSP   
+025F   39                     RTS   
+0260                          ;******************************
+0260                          ;******************************
+0260   8D 1A        TSTHEX:   BSR   TSTDIG   
+0262   24 22                  BCC   TST05   
+0264   81 41                  CMPA   #"A"   
+0266   25 11                  BCS   TST03   
+0268   81 46                  CMPA   #"F"   
+026A   22 0D                  BHI   TST03   
+026C   80 37                  SUBA   #"A"-10   
+026E   1C FE                  ANDCC   #$FE   
+0270   39                     RTS   
+0271                          ;******************************
+0271                          ;******************************
+0271   81 41        TSTLTR:   CMPA   #"A"   
+0273   25 04                  BCS   TST03   
+0275   81 5A                  CMPA   #"Z"   
+0277   23 0D                  BLS   TST05   
+0279   1A 01        TST03:    ORCC   #$01   
+027B   39                     RTS   
+027C                          ;******************************
+027C                          ;******************************
+027C   81 30        TSTDIG:   CMPA   #"0"   
+027E   25 F9                  BCS   TST03   
+0280   81 39                  CMPA   #"9"   
+0282   22 F5                  BHI   TST03   
+0284   80 30                  SUBA   #"0"   
+0286   1C FE        TST05:    ANDCC   #$FE   
+0288   39                     RTS   
+0289                          ;******************************
+0289                          ;******************************
+0289   8D CE        TSTVAR:   BSR   SKIPSP   
+028B   8D E4                  BSR   TSTLTR   
+028D   25 12                  BCS   TSTV03   
+028F   1F 89                  TFR   A,B   
+0291   A6 01                  LDA   1,X   
+0293   8D DC                  BSR   TSTLTR   
+0295   24 E2                  BCC   TST03   
+0297   30 01                  LEAX   1,X   
+0299   C0 41                  SUBB   #"A"   
+029B   58                     ASLB   
+029C   4F                     CLRA   
+029D   D3 06                  ADDD   STKTOP   
+029F   1C FE        TSTV02:   ANDCC   #$FE   
+02A1   39           TSTV03:   RTS   
+02A2                          ;******************************
+02A2                          ;******************************
+02A2   BD 05 0E     USER:     JSR   ARGONE   
+02A5   34 06                  PSHS   D   
+02A7   BD 02 59               JSR   SKIPSP   
+02AA   81 2C                  CMPA   #","   
+02AC   27 09                  BEQ   USER03   
+02AE   81 29                  CMPA   #")"   
+02B0   1A 01                  ORCC   #$01   
+02B2   27 15                  BEQ   USER05   
+02B4   7E 01 55     USER02:   JMP   ERRORS   
+02B7   30 01        USER03:   LEAX   1,X   
+02B9   BD 04 41               JSR   EXPR   
+02BC   34 02                  PSHS   A   
+02BE   BD 02 59               JSR   SKIPSP   
+02C1   81 29                  CMPA   #")"   
+02C3   35 02                  PULS   A   
+02C5   26 ED                  BNE   USER02   
+02C7   1C FE                  ANDCC   #$FE   
+02C9   30 01        USER05:   LEAX   1,X   
+02CB   9F 08                  STX   CURSOR   
+02CD   AD F1                  JSR   [,S++]   
+02CF   9E 08                  LDX   CURSOR   
+02D1   1C FE                  ANDCC   #$FE   
+02D3   39                     RTS   
+02D4                          ;******************************
+02D4                          ;******************************
+02D4   BD 02 59     TSTSNB:   JSR   SKIPSP   
+02D7   81 2D                  CMPA   #"-"   
+02D9   26 0D                  BNE   TSTNBR   
+02DB   30 01                  LEAX   1,X   
+02DD   8D 09                  BSR   TSTNBR   
+02DF   25 06                  BCS   TSN02   
+02E1   40                     NEGA   
+02E2   50                     NEGB   
+02E3   82 00                  SBCA   #0   
+02E5   1C FC                  ANDCC   #$FC   
+02E7   39           TSN02:    RTS   
+02E8                          ;******************************
+02E8                          ;******************************
+02E8   BD 02 59     TSTNBR:   JSR   SKIPSP   
+02EB   BD 02 7C               JSR   TSTDIG   
+02EE   24 2F                  BCC   TSTN02   
+02F0   81 24                  CMPA   #"$"   
+02F2   1A 01                  ORCC   #$01   
+02F4   26 60                  BNE   TSTN09   
+02F6   30 01        TSTN20:   LEAX   1,X   
+02F8   6F E2                  CLR   ,-S   
+02FA   6F E2                  CLR   ,-S   
+02FC   A6 00        TSTN23:   LDA   0,X   
+02FE   BD 02 60               JSR   TSTHEX   
+0301   25 4F                  BCS   TSTN07   
+0303   30 01                  LEAX   1,X   
+0305   34 10                  PSHS   X   
+0307   34 02                  PSHS   A   
+0309   EC 63                  LDD   3,S   
+030B   85 F0                  BITA   #$F0   
+030D   26 4A                  BNE   TSTN11   
+030F   58                     ASLB   
+0310   49                     ROLA   
+0311   58                     ASLB   
+0312   49                     ROLA   
+0313   58                     ASLB   
+0314   49                     ROLA   
+0315   58                     ASLB   
+0316   49                     ROLA   
+0317   EB E0                  ADDB   ,S+   
+0319   ED 62                  STD   2,S   
+031B   35 10                  PULS   X   
+031D   20 DD                  BRA   TSTN23   
+031F   30 01        TSTN02:   LEAX   1,X   
+0321   34 02                  PSHS   A   
+0323   6F E2                  CLR   ,-S   
+0325   A6 00        TSTN03:   LDA   0,X   
+0327   BD 02 7C               JSR   TSTDIG   
+032A   25 26                  BCS   TSTN07   
+032C   30 01                  LEAX   1,X   
+032E   34 10                  PSHS   X   
+0330   34 02                  PSHS   A   
+0332   EC 63                  LDD   3,S   
+0334   58                     ASLB   
+0335   49                     ROLA   
+0336   29 21                  BVS   TSTN11   
+0338   58                     ASLB   
+0339   49                     ROLA   
+033A   29 1D                  BVS   TSTN11   
+033C   E3 63                  ADDD   3,S   
+033E   29 19                  BVS   TSTN11   
+0340   58                     ASLB   
+0341   49                     ROLA   
+0342   29 15                  BVS   TSTN11   
+0344   EB 60                  ADDB   0,S   
+0346   89 00                  ADCA   #0   
+0348   29 0F                  BVS   TSTN11   
+034A   ED 63                  STD   3,S   
+034C   32 61                  LEAS   1,S   
+034E   35 10                  PULS   X   
+0350   20 D3                  BRA   TSTN03   
+0352   35 06        TSTN07:   PULS   D   
+0354   1C FE                  ANDCC   #$FE   
+0356   1C FD        TSTN09:   ANDCC   #$FD   
+0358   39                     RTS   
+0359   AE 61        TSTN11:   LDX   1,S   
+035B   32 65                  LEAS   5,S   
+035D   1A 03                  ORCC   #$03   
+035F   39                     RTS   
+0360                          ;******************************
+0360                          ;******************************
+0360   10 DF 0A     TSTSTK:   STS   SAVESP   
+0363   DC 0A                  LDD   SAVESP   
+0365   83 00 30               SUBD   #STKCUS   
+0368   93 04                  SUBD   STKLIM   
+036A   39                     RTS   
+036B                          ;******************************
+036B                          ;******************************
+036B   BD 04 FB     PEEK:     JSR   PAREXP   
+036E   34 06                  PSHS   D   
+0370   34 10                  PSHS   X   
+0372   E6 72                  LDB   [2,S]   
+0374   35 10                  PULS   X   
+0376   32 62                  LEAS   2,S   
+0378   4F                     CLRA   
+0379   39                     RTS   
+037A                          ;******************************
+037A                          ;******************************
+037A   BD 04 FB     POKE:     JSR   PAREXP   
+037D   34 06                  PSHS   D   
+037F   BD 02 59               JSR   SKIPSP   
+0382   81 3D                  CMPA   #"="   
+0384   27 03                  BEQ   POKE05   
+0386   7E 01 55               JMP   ERRORS   
+0389   30 01        POKE05:   LEAX   1,X   
+038B   BD 04 41               JSR   EXPR   
+038E   BD 05 2F               JSR   TSTEOL   
+0391   34 10                  PSHS   X   
+0393   E7 72                  STB   [2,S]   
+0395   35 10                  PULS   X   
+0397   32 62                  LEAS   2,S   
+0399   7E 01 FA               JMP   ENDS02   
+039C                          ;******************************
+039C                          ;******************************
+039C   BD 02 59     TSTFUN:   JSR   SKIPSP   
+039F   9F 08                  STX   CURSOR   
+03A1   8E 03 AC               LDX   #FUNT   
+03A4   BD 02 1F               JSR   FAN00   
+03A7   25 02                  BCS   TSTF05   
+03A9   34 06                  PSHS   D   
+03AB   39           TSTF05:   RTS   
+03AC                          ;******************************
+03AC                          ;******************************
+03AC   55 53 52     FUNT:     DB   "USR"   
+03AF   04                     FCB   EOL   
+03B0   02 A2                  FDB   USER   
+03B2   50 45 45 4B            DB   "PEEK"   
+03B6   04                     FCB   EOL   
+03B7   03 6B                  FDB   PEEK   
+03B9   4D 45 4D               DB   "MEM"   
+03BC   04                     FCB   EOL   
+03BD   03 60                  FDB   TSTSTK   
+03BF   04                     FCB   EOL   
+03C0                          ;******************************
+03C0                          ;******************************
+03C0   9E 00        FLINE:    LDX   USRBAS   
+03C2   9C 02        FNDLIN:   CMPX   USRTOP   
+03C4   26 03                  BNE   FND03   
+03C6   1A 03                  ORCC   #$03   
+03C8   39                     RTS   
+03C9   10 A3 00     FND03:    CMPD   0,X   
+03CC   26 03                  BNE   FND05   
+03CE   1C FC                  ANDCC   #$FC   
+03D0   39                     RTS   
+03D1   24 05        FND05:    BCC   FND07   
+03D3   1A 01                  ORCC   #$01   
+03D5   1C FD                  ANDCC   #$FD   
+03D7   39                     RTS   
+03D8   34 02        FND07:    PSHS   A   
+03DA   86 04                  LDA   #EOL   
+03DC   30 01                  LEAX   1,X   
+03DE   30 01        FND09:    LEAX   1,X   
+03E0   A1 00                  CMPA   0,X   
+03E2   26 FA                  BNE   FND09   
+03E4   35 02                  PULS   A   
+03E6   30 01                  LEAX   1,X   
+03E8   20 D8                  BRA   FNDLIN   
+03EA                          ;******************************
+03EA                          ;******************************
+03EA   8D 55        RELEXP:   BSR   EXPR   
+03EC   34 06                  PSHS   D   
+03EE   5F                     CLRB   
+03EF   BD 02 59               JSR   SKIPSP   
+03F2   81 3D                  CMPA   #"="   
+03F4   27 23                  BEQ   REL06   
+03F6   81 3C                  CMPA   #"<"   
+03F8   26 10                  BNE   REL03   
+03FA   30 01                  LEAX   1,X   
+03FC   5C                     INCB   
+03FD   BD 02 59               JSR   SKIPSP   
+0400   81 3E                  CMPA   #">"   
+0402   26 11                  BNE   REL05   
+0404   30 01                  LEAX   1,X   
+0406   CB 04                  ADDB   #4   
+0408   20 13                  BRA   REL07   
+040A   81 3E        REL03:    CMPA   #">"   
+040C   26 5F                  BNE   EXPR06   
+040E   30 01                  LEAX   1,X   
+0410   CB 04                  ADDB   #4   
+0412   BD 02 59               JSR   SKIPSP   
+0415   81 3D        REL05:    CMPA   #"="   
+0417   26 04                  BNE   REL07   
+0419   30 01        REL06:    LEAX   1,X   
+041B   CB 02                  ADDB   #2   
+041D   34 04        REL07:    PSHS   B   
+041F   8D 20                  BSR   EXPR   
+0421   34 10                  PSHS   X   
+0423   A3 63                  SUBD   3,S   
+0425   1F A8                  TFR   CC,A   
+0427   44                     LSRA   
+0428   1F 89                  TFR   A,B   
+042A   48                     ASLA   
+042B   48                     ASLA   
+042C   34 04                  PSHS   B   
+042E   AB E0                  ADDA   ,S+   
+0430   84 06                  ANDA   #$06   
+0432   26 01                  BNE   REL08   
+0434   4C                     INCA   
+0435   5F           REL08:    CLRB   
+0436   A4 62                  ANDA   2,S   
+0438   27 01                  BEQ   REL09   
+043A   53                     COMB   
+043B   4F           REL09:    CLRA   
+043C   35 10                  PULS   X   
+043E   32 63                  LEAS   3,S   
+0440   39                     RTS   
+0441                          ;******************************
+0441                          ;******************************
+0441   6F E2        EXPR:     CLR   ,-S   
+0443   6F E2                  CLR   ,-S   
+0445   BD 02 59               JSR   SKIPSP   
+0448   81 2D                  CMPA   #"-"   
+044A   27 17                  BEQ   EXPR05   
+044C   81 2B                  CMPA   #"+"   
+044E   26 02                  BNE   EXPR03   
+0450   30 01        EXPR02:   LEAX   1,X   
+0452   8D 1C        EXPR03:   BSR   TERM   
+0454   E3 60        EXPR04:   ADDD   0,S   
+0456   ED 60                  STD   0,S   
+0458   BD 02 59               JSR   SKIPSP   
+045B   81 2B                  CMPA   #"+"   
+045D   27 F1                  BEQ   EXPR02   
+045F   81 2D                  CMPA   #"-"   
+0461   26 0A                  BNE   EXPR06   
+0463   30 01        EXPR05:   LEAX   1,X   
+0465   8D 09                  BSR   TERM   
+0467   40                     NEGA   
+0468   50                     NEGB   
+0469   82 00                  SBCA   #0   
+046B   20 E7                  BRA   EXPR04   
+046D   35 06        EXPR06:   PULS   D   
+046F   39                     RTS   
+0470                          ;******************************
+0470                          ;******************************
+0470   BD 04 E3     TERM:     JSR   FACT   
+0473   34 06                  PSHS   D   
+0475   BD 02 59     TERM03:   JSR   SKIPSP   
+0478   81 2A                  CMPA   #"*"   
+047A   27 48                  BEQ   TERM07   
+047C   81 2F                  CMPA   #"/"   
+047E   27 03                  BEQ   TERM05   
+0480   35 06                  PULS   D   
+0482   39                     RTS   
+0483   30 01        TERM05:   LEAX   1,X   
+0485   8D 5C                  BSR   FACT   
+0487   34 10                  PSHS   X   
+0489   30 62                  LEAX   2,S   
+048B   34 06                  PSHS   D   
+048D   A8 00                  EORA   0,X   
+048F   BD 05 22               JSR   ABSX   
+0492   30 60                  LEAX   0,S   
+0494   BD 05 22               JSR   ABSX   
+0497   34 02                  PSHS   A   
+0499   86 11                  LDA   #17   
+049B   34 02                  PSHS   A   
+049D   4F                     CLRA   
+049E   5F                     CLRB   
+049F   A3 62        DIV05:    SUBD   2,S   
+04A1   24 06                  BCC   DIV07   
+04A3   E3 62                  ADDD   2,S   
+04A5   1C FE                  ANDCC   #$FE   
+04A7   20 02                  BRA   DIV09   
+04A9   1A 01        DIV07:    ORCC   #$01   
+04AB   69 67        DIV09:    ROL   7,S   
+04AD   69 66                  ROL   6,S   
+04AF   59                     ROLB   
+04B0   49                     ROLA   
+04B1   6A 60                  DEC   0,S   
+04B3   26 EA                  BNE   DIV05   
+04B5   A6 61                  LDA   1,S   
+04B7   32 64                  LEAS   4,S   
+04B9   4D                     TSTA   
+04BA   2A 04                  BPL   TERM06   
+04BC   30 62                  LEAX   2,S   
+04BE   8D 66                  BSR   NEGX   
+04C0   35 10        TERM06:   PULS   X   
+04C2   20 B1                  BRA   TERM03   
+04C4   30 01        TERM07:   LEAX   1,X   
+04C6   8D 1B                  BSR   FACT   
+04C8   34 04        MULT:     PSHS   B   
+04CA   E6 62                  LDB   2,S   
+04CC   3D                     MUL   
+04CD   A6 61                  LDA   1,S   
+04CF   E7 61                  STB   1,S   
+04D1   E6 60                  LDB   0,S   
+04D3   3D                     MUL   
+04D4   A6 62                  LDA   2,S   
+04D6   E7 62                  STB   2,S   
+04D8   35 04                  PULS   B   
+04DA   3D                     MUL   
+04DB   AB 60                  ADDA   0,S   
+04DD   AB 61                  ADDA   1,S   
+04DF   ED 60                  STD   0,S   
+04E1   20 92                  BRA   TERM03   
+04E3                          ;******************************
+04E3                          ;******************************
+04E3   BD 02 89     FACT:     JSR   TSTVAR   
+04E6   25 09                  BCS   FACT03   
+04E8   34 10                  PSHS   X   
+04EA   1F 01                  TFR   D,X   
+04EC   EC 00                  LDD   0,X   
+04EE   35 10                  PULS   X   
+04F0   39           FACT02:   RTS   
+04F1   BD 02 E8     FACT03:   JSR   TSTNBR   
+04F4   24 FA                  BCC   FACT02   
+04F6   BD 03 9C               JSR   TSTFUN   
+04F9   24 F5                  BCC   FACT02   
+04FB   8D 11        PAREXP:   BSR   ARGONE   
+04FD   34 02                  PSHS   A   
+04FF   BD 02 59               JSR   SKIPSP   
+0502   81 29                  CMPA   #")"   
+0504   35 02                  PULS   A   
+0506   26 03                  BNE   FACT05   
+0508   30 01                  LEAX   1,X   
+050A   39                     RTS   
+050B   7E 01 55     FACT05:   JMP   ERRORS   
+050E                          ;******************************
+050E                          ;******************************
+050E   BD 03 60     ARGONE:   JSR   TSTSTK   
+0511   24 03                  BCC   FACT04   
+0513   7E 01 4D               JMP   ERRORF   
+0516   BD 02 59     FACT04:   JSR   SKIPSP   
+0519   81 28                  CMPA   #"("   
+051B   26 EE                  BNE   FACT05   
+051D   30 01                  LEAX   1,X   
+051F   7E 04 41               JMP   EXPR   
+0522                          ;******************************
+0522                          ;******************************
+0522   6D 00        ABSX:     TST   0,X   
+0524   2A 08                  BPL   NEG05   
+0526   60 00        NEGX:     NEG   0,X   
+0528   60 01                  NEG   1,X   
+052A   24 02                  BCC   NEG05   
+052C   6A 00                  DEC   0,X   
+052E   39           NEG05:    RTS   
+052F                          ;******************************
+052F                          ;******************************
+052F   34 02        TSTEOL:   PSHS   A   
+0531   BD 02 59               JSR   SKIPSP   
+0534   81 04                  CMPA   #EOL   
+0536   27 03                  BEQ   TEOL03   
+0538   7E 01 55               JMP   ERRORS   
+053B   30 01        TEOL03:   LEAX   1,X   
+053D   35 02                  PULS   A   
+053F   39                     RTS   
+0540                          ;******************************
+0540                          ;******************************
+0540   BD 02 89     LET:      JSR   TSTVAR   
+0543   24 03                  BCC   LET03   
+0545   7E 01 55               JMP   ERRORS   
+0548   34 06        LET03:    PSHS   D   
+054A   BD 02 59               JSR   SKIPSP   
+054D   81 3D                  CMPA   #"="   
+054F   27 03                  BEQ   LET05   
+0551   7E 01 55               JMP   ERRORS   
+0554   30 01        LET05:    LEAX   1,X   
+0556   BD 04 41               JSR   EXPR   
+0559   8D D4                  BSR   TSTEOL   
+055B   9F 08                  STX   CURSOR   
+055D   35 10                  PULS   X   
+055F   ED 00                  STD   0,X   
+0561   9E 08                  LDX   CURSOR   
+0563   7E 01 FA               JMP   ENDS02   
+0566                          ;******************************
+0566                          ;******************************
+0566   BD 03 EA     IF:       JSR   RELEXP   
+0569   5D                     TSTB   
+056A   27 03                  BEQ   IF03   
+056C   7E 02 0B               JMP   MSLINE   
+056F   7E 01 F1     IF03:     JMP   REM   
+0572                          ;******************************
+0572                          ;******************************
+0572   BD 04 41     GOTO:     JSR   EXPR   
+0575   8D B8                  BSR   TSTEOL   
+0577   BD 03 C0               JSR   FLINE   
+057A   25 0F                  BCS   GOSB04   
+057C   7E 02 07               JMP   NXTLIN   
+057F                          ;******************************
+057F                          ;******************************
+057F   BD 04 41     GOSUB:    JSR   EXPR   
+0582   8D AB                  BSR   TSTEOL   
+0584   9F 08                  STX   CURSOR   
+0586   BD 03 C0               JSR   FLINE   
+0589   24 03                  BCC   GOSB03   
+058B   7E 01 5E     GOSB04:   JMP   ERRORR   
+058E   BD 03 60     GOSB03:   JSR   TSTSTK   
+0591   24 03                  BCC   GOSB05   
+0593   7E 01 4D               JMP   ERRORF   
+0596   DC 08        GOSB05:   LDD   CURSOR   
+0598   34 06                  PSHS   D   
+059A   DC 0C                  LDD   LINENB   
+059C   34 06                  PSHS   D   
+059E   BD 02 07               JSR   NXTLIN   
+05A1   35 06                  PULS   D   
+05A3   DD 0C                  STD   LINENB   
+05A5   35 10                  PULS   X   
+05A7   7E 01 FA               JMP   ENDS02   
+05AA                          ;******************************
+05AA                          ;******************************
+05AA                RETURN:   EQU   TSTEOL   
+05AA                          ;******************************
+05AA                          ;******************************
+05AA   BD 02 59     PRINT:    JSR   SKIPSP   
+05AD   81 2C        PR01:     CMPA   #","   
+05AF   27 36                  BEQ   PR05   
+05B1   81 3B                  CMPA   #";"   
+05B3   27 3D                  BEQ   PR07   
+05B5   81 04                  CMPA   #EOL   
+05B7   27 25                  BEQ   PR04   
+05B9   81 22                  CMPA   #$22   
+05BB   26 06                  BNE   PR02   
+05BD   30 01                  LEAX   1,X   
+05BF   8D 42                  BSR   PRNTQS   
+05C1   20 09                  BRA   PR03   
+05C3   BD 04 41     PR02:     JSR   EXPR   
+05C6   34 10                  PSHS   X   
+05C8   8D 47                  BSR   PRNTN   
+05CA   35 10                  PULS   X   
+05CC   BD 02 59     PR03:     JSR   SKIPSP   
+05CF   81 2C                  CMPA   #","   
+05D1   27 14                  BEQ   PR05   
+05D3   81 3B                  CMPA   #";"   
+05D5   27 1B                  BEQ   PR07   
+05D7   81 04                  CMPA   #EOL   
+05D9   27 03                  BEQ   PR04   
+05DB   7E 01 55               JMP   ERRORS   
+05DE   34 10        PR04:     PSHS   X   
+05E0   BD 01 3E               JSR   CRLF   
+05E3   35 10                  PULS   X   
+05E5   20 14                  BRA   PR08   
+05E7   C6 07        PR05:     LDB   #$7   
+05E9   86 20        PR06:     LDA   #SPACE   
+05EB   BD 07 A8               JSR   PUTCHR   
+05EE   D5 12                  BITB   ZONE   
+05F0   26 F7                  BNE   PR06   
+05F2   30 01        PR07:     LEAX   1,X   
+05F4   BD 02 59               JSR   SKIPSP   
+05F7   81 04                  CMPA   #EOL   
+05F9   26 B2                  BNE   PR01   
+05FB   30 01        PR08:     LEAX   1,X   
+05FD   7E 01 FA               JMP   ENDS02   
+0600                          ;*
+0600                          ;*
+0600   BD 07 A8     PRQ01:    JSR   PUTCHR   
+0603   A6 80        PRNTQS:   LDA   ,X+   
+0605   81 04                  CMPA   #EOL   
+0607   26 03                  BNE   PRQ03   
+0609   7E 01 55               JMP   ERRORS   
+060C   81 22        PRQ03:    CMPA   #$22   
+060E   26 F0                  BNE   PRQ01   
+0610   39                     RTS   
+0611                          ;*
+0611   4D           PRNTN:    TSTA   
+0612   2A 0D                  BPL   PRN03   
+0614   40                     NEGA   
+0615   50                     NEGB   
+0616   82 00                  SBCA   #0   
+0618   34 02                  PSHS   A   
+061A   86 2D                  LDA   #"-"   
+061C   BD 07 A8               JSR   PUTCHR   
+061F   35 02                  PULS   A   
+0621   8E 06 50     PRN03:    LDX   #PRNPT-2   
+0624   30 02        PRN05:    LEAX   2,X   
+0626   10 A3 00               CMPD   0,X   
+0629   24 05                  BCC   PRN07   
+062B   8C 06 5A               CMPX   #PRNPTO   
+062E   26 F4                  BNE   PRN05   
+0630   0F 10        PRN07:    CLR   CHAR   
+0632   10 A3 00     PRN09:    CMPD   0,X   
+0635   25 06                  BCS   PRN11   
+0637   A3 00                  SUBD   0,X   
+0639   0C 10                  INC   CHAR   
+063B   20 F5                  BRA   PRN09   
+063D   34 02        PRN11:    PSHS   A   
+063F   86 30                  LDA   #"0"   
+0641   9B 10                  ADDA   CHAR   
+0643   BD 07 A8               JSR   PUTCHR   
+0646   35 02                  PULS   A   
+0648   8C 06 5A               CMPX   #PRNPTO   
+064B   27 04                  BEQ   PRN13   
+064D   30 02                  LEAX   2,X   
+064F   20 DF                  BRA   PRN07   
+0651   39           PRN13:    RTS   
+0652   27 10        PRNPT:    FDB   10000   
+0654   03 E8                  FDB   1000   
+0656   00 64                  FDB   100   
+0658   00 0A                  FDB   10   
+065A   00 01        PRNPTO:   FDB   1   
+065C                          ;*
+065C   8E 06 54     PRNT4:    LDX   #PRNPT+2   
+065F   20 CF                  BRA   PRN07   
+0661                          ;******************************
+0661                          ;******************************
+0661   BD 02 89     INPUT:    JSR   TSTVAR   
+0664   25 3C                  BCS   IN11   
+0666   34 06                  PSHS   D   
+0668   9F 08                  STX   CURSOR   
+066A   86 3F        IN03:     LDA   #"?"   
+066C   BD 07 A8               JSR   PUTCHR   
+066F   BD 01 8E               JSR   GETLIN   
+0672   BD 02 59     IN05:     JSR   SKIPSP   
+0675   81 04                  CMPA   #EOL   
+0677   27 F1                  BEQ   IN03   
+0679   BD 02 D4               JSR   TSTSNB   
+067C   24 0B                  BCC   IN07   
+067E   8E 06 B6               LDX   #RMESS   
+0681   BD 01 37               JSR   PUTSTR   
+0684   BD 01 3E               JSR   CRLF   
+0687   20 E1                  BRA   IN03   
+0689   9F 0E        IN07:     STX   SCRTCH   
+068B   35 10                  PULS   X   
+068D   ED 00                  STD   0,X   
+068F   9E 08                  LDX   CURSOR   
+0691   BD 02 59               JSR   SKIPSP   
+0694   81 2C                  CMPA   #","   
+0696   27 03                  BEQ   IN09   
+0698   7E 01 F7               JMP   ENDSMT   
+069B   30 01        IN09:     LEAX   1,X   
+069D   BD 02 89               JSR   TSTVAR   
+06A0   24 03                  BCC   IN13   
+06A2   7E 01 55     IN11:     JMP   ERRORS   
+06A5   34 06        IN13:     PSHS   D   
+06A7   34 10                  PSHS   X   
+06A9   9E 0E                  LDX   SCRTCH   
+06AB   BD 02 59               JSR   SKIPSP   
+06AE   81 2C                  CMPA   #","   
+06B0   26 C0                  BNE   IN05   
+06B2   30 01                  LEAX   1,X   
+06B4   20 BC                  BRA   IN05   
+06B6   52 45 2D 45 4E 54 45 52 RMESS:   DB   "RE-ENTER"   
+06BE   04                     FCB   EOL   
+06BF                          ;******************************
+06BF                          ;******************************
+06BF   9E 06        RUN:      LDX   STKTOP   
+06C1   86 34                  LDA   #52   
+06C3   6F 80        RUN01:    CLR   ,X+   
+06C5   4A                     DECA   
+06C6   26 FB                  BNE   RUN01   
+06C8   9E 00                  LDX   USRBAS   
+06CA   7E 02 00               JMP   REM05   
+06CD                          ;******************************
+06CD                          ;******************************
+06CD   BD 02 E8     LIST:     JSR   TSTNBR   
+06D0   24 08                  BCC   LIST03   
+06D2   4F                     CLRA   
+06D3   5F                     CLRB   
+06D4   DD 08                  STD   CURSOR   
+06D6   86 7F                  LDA   #$7F   
+06D8   20 17                  BRA   LIST07   
+06DA   DD 08        LIST03:   STD   CURSOR   
+06DC   BD 02 59               JSR   SKIPSP   
+06DF   81 2C                  CMPA   #","   
+06E1   27 04                  BEQ   LIST05   
+06E3   96 08                  LDA   CURSOR   
+06E5   20 0A                  BRA   LIST07   
+06E7   30 01        LIST05:   LEAX   1,X   
+06E9   BD 02 E8               JSR   TSTNBR   
+06EC   24 03                  BCC   LIST07   
+06EE   7E 01 55               JMP   ERRORS   
+06F1   BD 05 2F     LIST07:   JSR   TSTEOL   
+06F4   34 06                  PSHS   D   
+06F6   DC 08                  LDD   CURSOR   
+06F8   9F 08                  STX   CURSOR   
+06FA   BD 03 C0               JSR   FLINE   
+06FD   9C 02        LIST09:   CMPX   USRTOP   
+06FF   27 28                  BEQ   LIST10   
+0701   35 06                  PULS   D   
+0703   10 A3 00               CMPD   0,X   
+0706   25 28                  BCS   LIST11   
+0708   34 06                  PSHS   D   
+070A   EC 81                  LDD   ,X++   
+070C   34 10                  PSHS   X   
+070E   BD 06 5C               JSR   PRNT4   
+0711   35 10                  PULS   X   
+0713   86 20                  LDA   #SPACE   
+0715   BD 07 A8               JSR   PUTCHR   
+0718   BD 01 37               JSR   PUTSTR   
+071B   30 01                  LEAX   1,X   
+071D   34 10                  PSHS   X   
+071F   BD 01 3E               JSR   CRLF   
+0722   35 10                  PULS   X   
+0724   BD 07 9A               JSR   TSTBRK   
+0727   20 D4                  BRA   LIST09   
+0729   32 62        LIST10:   LEAS   2,S   
+072B   86 03                  LDA   #ETX   
+072D   BD 07 A8               JSR   PUTCHR   
+0730   9E 08        LIST11:   LDX   CURSOR   
+0732   7E 01 FA               JMP   ENDS02   
+0735                          ;******************************
+0735                          ;******************************
+0735   4C 45 54     VERBT:    DB   "LET"   
+0738   04                     FCB   EOL   
+0739   05 40                  FDB   LET   
+073B   49 46                  DB   "IF"   
+073D   04                     FCB   EOL   
+073E   05 66                  FDB   IF   
+0740   47 4F 54 4F            DB   "GOTO"   
+0744   04                     FCB   EOL   
+0745   05 72                  FDB   GOTO   
+0747   47 4F 53 55 42         DB   "GOSUB"   
+074C   04                     FCB   EOL   
+074D   05 7F                  FDB   GOSUB   
+074F   52 45 54 55 52 4E      DB   "RETURN"   
+0755   04                     FCB   EOL   
+0756   05 2F                  FDB   RETURN   
+0758   50 4F 4B 45            DB   "POKE"   
+075C   04                     FCB   EOL   
+075D   03 7A                  FDB   POKE   
+075F   50 52 49 4E 54         DB   "PRINT"   
+0764   04                     FCB   EOL   
+0765   05 AA                  FDB   PRINT   
+0767   49 4E 50 55 54         DB   "INPUT"   
+076C   04                     FCB   EOL   
+076D   06 61                  FDB   INPUT   
+076F   52 45 4D               DB   "REM"   
+0772   04                     FCB   EOL   
+0773   01 F1                  FDB   REM   
+0775   53 54 4F 50            DB   "STOP"   
+0779   04                     FCB   EOL   
+077A   07 E4                  FDB   END   
+077C   45 4E 44               DB   "END"   
+077F   04                     FCB   EOL   
+0780   07 E4                  FDB   END   
+0782   52 55 4E               DB   "RUN"   
+0785   04                     FCB   EOL   
+0786   06 BF                  FDB   RUN   
+0788   4C 49 53 54            DB   "LIST"   
+078C   04                     FCB   EOL   
+078D   06 CD                  FDB   LIST   
+078F   4E 45 57               DB   "NEW"   
+0792   04                     FCB   EOL   
+0793   00 1E                  FDB   CLEAR   
+0795   3F                     DB   "?"   
+0796   04                     FCB   EOL   
+0797   05 AA                  FDB   PRINT   
+0799   04                     FCB   EOL   
+079A                          ;******************************
+079A                          ;******************************
+079A   8D 2A        TSTBRK:   BSR   BRKEEE   
+079C   27 09                  BEQ   GETC05   
+079E   8D 0D        GETCHR:   BSR   INEEE   
+07A0   81 03                  CMPA   #ETX   
+07A2   26 03                  BNE   GETC05   
+07A4   7E 01 66               JMP   BREAK   
+07A7   39           GETC05:   RTS   
+07A8   0C 12        PUTCHR:   INC   ZONE   
+07AA   7E 07 B7               JMP   OUTEEE   
+07AD                          ;******************************
+07AD                          ;******************************
+07AD   8D 17        INEEE:    BSR   BRKEEE   
+07AF   27 FC                  BEQ   INEEE   
+07B1   B6 83 FF               LDA   RECEV   
+07B4   84 7F                  ANDA   #$7F   
+07B6   39                     RTS   
+07B7   34 02        OUTEEE:   PSHS   A   
+07B9   B6 83 FE     OUT01:    LDA   TRCS   
+07BC   85 02                  BITA   #TDRE   
+07BE   27 F9                  BEQ   OUT01   
+07C0   35 02                  PULS   A   
+07C2   B7 83 FF               STA   TRANS   
+07C5   39                     RTS   
+07C6   34 02        BRKEEE:   PSHS   A   
+07C8   B6 83 FE     BRK03:    LDA   TRCS   
+07CB   85 20                  BITA   #ORFE   
+07CD   27 05                  BEQ   BRK05   
+07CF   B6 83 FF               LDA   RECEV   
+07D2   20 F4                  BRA   BRK03   
+07D4   85 01        BRK05:    BITA   #RDRF   
+07D6   35 02                  PULS   A   
+07D8   39                     RTS   
+07D9                          ;*
+07D9   86 03                  LDA   #CNTL1   
+07DB   B7 83 FE               STA   RMCR   
+07DE   86 15                  LDA   #CNTL2   
+07E0   B7 83 FE               STA   TRCS   
+07E3                INTEEE:   EQU   $   
+07E3   39                     RTS   
+07E4                          ;******************************
+07E4                          ;******************************
+07E4                END:      
+
+
+EOL:                0004 DEFINED AT LINE 18
+                    > USED AT LINE 127
+                    > USED AT LINE 232
+                    > USED AT LINE 235
+                    > USED AT LINE 238
+                    > USED AT LINE 241
+                    > USED AT LINE 244
+                    > USED AT LINE 560
+                    > USED AT LINE 563
+                    > USED AT LINE 566
+                    > USED AT LINE 568
+                    > USED AT LINE 966
+                    > USED AT LINE 1027
+                    > USED AT LINE 1030
+                    > USED AT LINE 1033
+                    > USED AT LINE 1036
+                    > USED AT LINE 1039
+                    > USED AT LINE 1042
+                    > USED AT LINE 1045
+                    > USED AT LINE 1048
+                    > USED AT LINE 1051
+                    > USED AT LINE 1054
+                    > USED AT LINE 1057
+                    > USED AT LINE 1060
+                    > USED AT LINE 1063
+                    > USED AT LINE 1066
+                    > USED AT LINE 1069
+                    > USED AT LINE 1071
+ETX:                0003 DEFINED AT LINE 19
+SPACE:              0020 DEFINED AT LINE 20
+CR:                 000D DEFINED AT LINE 21
+                    > USED AT LINE 227
+LF:                 000A DEFINED AT LINE 22
+                    > USED AT LINE 227
+BS:                 0008 DEFINED AT LINE 23
+CAN:                0018 DEFINED AT LINE 24
+BELL:               0007 DEFINED AT LINE 25
+FILL:               0000 DEFINED AT LINE 26
+DEL:                007F DEFINED AT LINE 27
+BSIZE:              0049 DEFINED AT LINE 28
+                    > USED AT LINE 48
+STKCUS:             0030 DEFINED AT LINE 29
+BACIA:              83FE DEFINED AT LINE 31
+                    > USED AT LINE 32
+                    > USED AT LINE 33
+                    > USED AT LINE 34
+                    > USED AT LINE 35
+RMCR:               83FE DEFINED AT LINE 32
+                    > USED AT LINE 1108
+TRCS:               83FE DEFINED AT LINE 33
+                    > USED AT LINE 1091
+                    > USED AT LINE 1098
+                    > USED AT LINE 1110
+RECEV:              83FF DEFINED AT LINE 34
+                    > USED AT LINE 1087
+                    > USED AT LINE 1101
+TRANS:              83FF DEFINED AT LINE 35
+                    > USED AT LINE 1095
+CNTL1:              0003 DEFINED AT LINE 36
+CNTL2:              0015 DEFINED AT LINE 37
+RDRF:               0001 DEFINED AT LINE 38
+ORFE:               0020 DEFINED AT LINE 39
+TDRE:               0002 DEFINED AT LINE 40
+LORAM:              0080 DEFINED AT LINE 43
+BUFFER:             0200 DEFINED AT LINE 44
+                    > USED AT LINE 48
+                    > USED AT LINE 49
+RAMSIZ:             2000 DEFINED AT LINE 45
+                    > USED AT LINE 49
+ROMADR:             F000 DEFINED AT LINE 46
+RAMBEG:             0249 DEFINED AT LINE 48
+RAMEND:             2200 DEFINED AT LINE 49
+RAMPAT:             AA0F DEFINED AT LINE 51
+ROMPAT:             F055 DEFINED AT LINE 52
+USRBAS:             0000 DEFINED AT LINE 56
+                    > USED AT LINE 85
+                    > USED AT LINE 94
+                    > USED AT LINE 139
+                    > USED AT LINE 571
+                    > USED AT LINE 974
+USRTOP:             0002 DEFINED AT LINE 57
+                    > USED AT LINE 86
+                    > USED AT LINE 112
+                    > USED AT LINE 135
+                    > USED AT LINE 148
+                    > USED AT LINE 158
+                    > USED AT LINE 180
+                    > USED AT LINE 182
+                    > USED AT LINE 183
+                    > USED AT LINE 187
+                    > USED AT LINE 190
+                    > USED AT LINE 313
+                    > USED AT LINE 572
+                    > USED AT LINE 1000
+STKLIM:             0004 DEFINED AT LINE 58
+                    > USED AT LINE 87
+                    > USED AT LINE 113
+                    > USED AT LINE 159
+                    > USED AT LINE 184
+                    > USED AT LINE 188
+                    > USED AT LINE 520
+STKTOP:             0006 DEFINED AT LINE 59
+                    > USED AT LINE 78
+                    > USED AT LINE 82
+                    > USED AT LINE 91
+                    > USED AT LINE 406
+                    > USED AT LINE 969
+CURSOR:             0008 DEFINED AT LINE 60
+                    > USED AT LINE 95
+                    > USED AT LINE 134
+                    > USED AT LINE 141
+                    > USED AT LINE 193
+                    > USED AT LINE 201
+                    > USED AT LINE 327
+                    > USED AT LINE 332
+                    > USED AT LINE 336
+                    > USED AT LINE 429
+                    > USED AT LINE 431
+                    > USED AT LINE 551
+                    > USED AT LINE 794
+                    > USED AT LINE 797
+                    > USED AT LINE 817
+                    > USED AT LINE 824
+                    > USED AT LINE 932
+                    > USED AT LINE 948
+                    > USED AT LINE 982
+                    > USED AT LINE 985
+                    > USED AT LINE 989
+                    > USED AT LINE 997
+                    > USED AT LINE 998
+                    > USED AT LINE 1022
+SAVESP:             000A DEFINED AT LINE 61
+                    > USED AT LINE 143
+                    > USED AT LINE 152
+                    > USED AT LINE 154
+                    > USED AT LINE 157
+                    > USED AT LINE 191
+                    > USED AT LINE 197
+                    > USED AT LINE 517
+                    > USED AT LINE 518
+LINENB:             000C DEFINED AT LINE 62
+                    > USED AT LINE 97
+                    > USED AT LINE 248
+                    > USED AT LINE 310
+                    > USED AT LINE 311
+                    > USED AT LINE 317
+                    > USED AT LINE 826
+                    > USED AT LINE 830
+SCRTCH:             000E DEFINED AT LINE 63
+                    > USED AT LINE 132
+                    > USED AT LINE 160
+                    > USED AT LINE 204
+                    > USED AT LINE 206
+                    > USED AT LINE 337
+                    > USED AT LINE 338
+                    > USED AT LINE 342
+                    > USED AT LINE 349
+                    > USED AT LINE 945
+                    > USED AT LINE 959
+CHAR:               0010 DEFINED AT LINE 64
+                    > USED AT LINE 151
+                    > USED AT LINE 155
+                    > USED AT LINE 181
+                    > USED AT LINE 192
+                    > USED AT LINE 196
+                    > USED AT LINE 203
+                    > USED AT LINE 207
+                    > USED AT LINE 209
+                    > USED AT LINE 335
+                    > USED AT LINE 343
+                    > USED AT LINE 345
+                    > USED AT LINE 352
+                    > USED AT LINE 903
+                    > USED AT LINE 907
+                    > USED AT LINE 911
+ZONE:               0012 DEFINED AT LINE 65
+                    > USED AT LINE 225
+                    > USED AT LINE 869
+                    > USED AT LINE 1081
+MODE:               0013 DEFINED AT LINE 66
+                    > USED AT LINE 92
+                    > USED AT LINE 98
+                    > USED AT LINE 280
+                    > USED AT LINE 301
+RESRVD:             0014 DEFINED AT LINE 67
+LOEND:              0015 DEFINED AT LINE 68
+BASIC:              0000 DEFINED AT LINE 76
+WARMS:              000C DEFINED AT LINE 78
+SETUP:              0014 DEFINED AT LINE 81
+                    > USED AT LINE 76
+SET03:              0018 DEFINED AT LINE 82
+CLEAR:              001E DEFINED AT LINE 84
+                    > USED AT LINE 1067
+CLR02:              0025 DEFINED AT LINE 87
+WMS05:              0027 DEFINED AT LINE 88
+                    > USED AT LINE 80
+CMDB:               0030 DEFINED AT LINE 91
+                    > USED AT LINE 110
+                    > USED AT LINE 255
+CMDE:               003C DEFINED AT LINE 96
+                    > USED AT LINE 108
+                    > USED AT LINE 124
+CMD01:              004A DEFINED AT LINE 102
+                    > USED AT LINE 99
+CMD02:              0060 DEFINED AT LINE 111
+                    > USED AT LINE 104
+CMD03:              006D DEFINED AT LINE 117
+                    > USED AT LINE 115
+CMD04:              0072 DEFINED AT LINE 119
+CMD05:              007F DEFINED AT LINE 125
+                    > USED AT LINE 105
+                    > USED AT LINE 118
+                    > USED AT LINE 122
+VSTR:               0082 DEFINED AT LINE 126
+EDITOR:             008D DEFINED AT LINE 130
+                    > USED AT LINE 123
+ED00:               00A1 DEFINED AT LINE 139
+                    > USED AT LINE 136
+ED01:               00A3 DEFINED AT LINE 140
+                    > USED AT LINE 138
+ED02:               00AE DEFINED AT LINE 145
+                    > USED AT LINE 147
+ED03:               00B4 DEFINED AT LINE 148
+                    > USED AT LINE 156
+ED35:               00C6 DEFINED AT LINE 157
+                    > USED AT LINE 149
+ED04:               00CC DEFINED AT LINE 160
+                    > USED AT LINE 142
+ED05:               00D0 DEFINED AT LINE 162
+                    > USED AT LINE 165
+ED55:               00DD DEFINED AT LINE 170
+                    > USED AT LINE 167
+ED06:               00E1 DEFINED AT LINE 172
+                    > USED AT LINE 176
+ED07:               0105 DEFINED AT LINE 190
+                    > USED AT LINE 186
+ED08:               0107 DEFINED AT LINE 191
+                    > USED AT LINE 199
+ED09:               0119 DEFINED AT LINE 200
+                    > USED AT LINE 194
+ED10:               0121 DEFINED AT LINE 204
+                    > USED AT LINE 211
+PUTS01:             0132 DEFINED AT LINE 215
+                    > USED AT LINE 219
+PUTSTR:             0137 DEFINED AT LINE 217
+                    > USED AT LINE 90
+                    > USED AT LINE 224
+                    > USED AT LINE 253
+                    > USED AT LINE 942
+                    > USED AT LINE 1012
+CRLF:               013E DEFINED AT LINE 223
+                    > USED AT LINE 88
+                    > USED AT LINE 93
+                    > USED AT LINE 245
+                    > USED AT LINE 254
+                    > USED AT LINE 258
+                    > USED AT LINE 285
+                    > USED AT LINE 863
+                    > USED AT LINE 943
+                    > USED AT LINE 1015
+CRLFST:             0146 DEFINED AT LINE 227
+ERRORF:             014D DEFINED AT LINE 230
+                    > USED AT LINE 189
+                    > USED AT LINE 756
+                    > USED AT LINE 823
+ERRORS:             0155 DEFINED AT LINE 233
+                    > USED AT LINE 125
+                    > USED AT LINE 419
+                    > USED AT LINE 539
+                    > USED AT LINE 751
+                    > USED AT LINE 777
+                    > USED AT LINE 785
+                    > USED AT LINE 790
+                    > USED AT LINE 861
+                    > USED AT LINE 883
+                    > USED AT LINE 956
+                    > USED AT LINE 994
+ERRORR:             015E DEFINED AT LINE 236
+                    > USED AT LINE 116
+                    > USED AT LINE 315
+                    > USED AT LINE 820
+BREAK:              0166 DEFINED AT LINE 239
+                    > USED AT LINE 1079
+ER01:               0173 DEFINED AT LINE 245
+                    > USED AT LINE 230
+                    > USED AT LINE 233
+                    > USED AT LINE 236
+                    > USED AT LINE 239
+GL00:               018C DEFINED AT LINE 258
+                    > USED AT LINE 275
+GETLIN:             018E DEFINED AT LINE 259
+                    > USED AT LINE 102
+                    > USED AT LINE 935
+GL03:               0191 DEFINED AT LINE 260
+                    > USED AT LINE 264
+                    > USED AT LINE 271
+                    > USED AT LINE 279
+                    > USED AT LINE 292
+GL04:               01A5 DEFINED AT LINE 269
+                    > USED AT LINE 266
+GL02:               01A7 DEFINED AT LINE 270
+                    > USED AT LINE 268
+                    > USED AT LINE 299
+                    > USED AT LINE 302
+GL05:               01AC DEFINED AT LINE 272
+                    > USED AT LINE 262
+GL06:               01C5 DEFINED AT LINE 284
+                    > USED AT LINE 281
+GL08:               01CC DEFINED AT LINE 287
+                    > USED AT LINE 283
+GL07:               01D4 DEFINED AT LINE 291
+                    > USED AT LINE 273
+GL09:               01E9 DEFINED AT LINE 300
+                    > USED AT LINE 277
+REM00:              01EF DEFINED AT LINE 305
+                    > USED AT LINE 308
+REM:                01F1 DEFINED AT LINE 306
+                    > USED AT LINE 805
+                    > USED AT LINE 1052
+ENDSMT:             01F7 DEFINED AT LINE 309
+                    > USED AT LINE 952
+ENDS02:             01FA DEFINED AT LINE 310
+                    > USED AT LINE 547
+                    > USED AT LINE 798
+                    > USED AT LINE 832
+                    > USED AT LINE 876
+                    > USED AT LINE 1023
+REM05:              0200 DEFINED AT LINE 313
+                    > USED AT LINE 975
+NXTLIN:             0207 DEFINED AT LINE 316
+                    > USED AT LINE 314
+                    > USED AT LINE 812
+                    > USED AT LINE 828
+MSLINE:             020B DEFINED AT LINE 318
+                    > USED AT LINE 109
+                    > USED AT LINE 804
+REM09:              0214 DEFINED AT LINE 322
+                    > USED AT LINE 312
+IMPLET:             0215 DEFINED AT LINE 323
+                    > USED AT LINE 320
+IFAN:               0218 DEFINED AT LINE 326
+                    > USED AT LINE 319
+FAN00:              021F DEFINED AT LINE 329
+                    > USED AT LINE 357
+                    > USED AT LINE 553
+FAN04:              022A DEFINED AT LINE 335
+                    > USED AT LINE 331
+FAN05:              0230 DEFINED AT LINE 338
+                    > USED AT LINE 347
+FAN07:              024B DEFINED AT LINE 352
+                    > USED AT LINE 340
+FAN08:              024D DEFINED AT LINE 353
+                    > USED AT LINE 355
+NXTNSP:             0257 DEFINED AT LINE 360
+                    > USED AT LINE 363
+SKIPSP:             0259 DEFINED AT LINE 361
+                    > USED AT LINE 106
+                    > USED AT LINE 131
+                    > USED AT LINE 306
+                    > USED AT LINE 326
+                    > USED AT LINE 395
+                    > USED AT LINE 413
+                    > USED AT LINE 423
+                    > USED AT LINE 436
+                    > USED AT LINE 449
+                    > USED AT LINE 536
+                    > USED AT LINE 550
+                    > USED AT LINE 598
+                    > USED AT LINE 605
+                    > USED AT LINE 615
+                    > USED AT LINE 646
+                    > USED AT LINE 655
+                    > USED AT LINE 672
+                    > USED AT LINE 745
+                    > USED AT LINE 757
+                    > USED AT LINE 774
+                    > USED AT LINE 787
+                    > USED AT LINE 838
+                    > USED AT LINE 854
+                    > USED AT LINE 872
+                    > USED AT LINE 936
+                    > USED AT LINE 949
+                    > USED AT LINE 960
+                    > USED AT LINE 986
+TSTHEX:             0260 DEFINED AT LINE 367
+                    > USED AT LINE 459
+TSTLTR:             0271 DEFINED AT LINE 378
+                    > USED AT LINE 396
+                    > USED AT LINE 400
+TST03:              0279 DEFINED AT LINE 382
+                    > USED AT LINE 370
+                    > USED AT LINE 372
+                    > USED AT LINE 379
+                    > USED AT LINE 387
+                    > USED AT LINE 389
+                    > USED AT LINE 401
+TSTDIG:             027C DEFINED AT LINE 386
+                    > USED AT LINE 367
+                    > USED AT LINE 450
+                    > USED AT LINE 483
+TST05:              0286 DEFINED AT LINE 391
+                    > USED AT LINE 368
+                    > USED AT LINE 381
+TSTVAR:             0289 DEFINED AT LINE 395
+                    > USED AT LINE 732
+                    > USED AT LINE 783
+                    > USED AT LINE 929
+                    > USED AT LINE 954
+TSTV02:             029F DEFINED AT LINE 407
+TSTV03:             02A1 DEFINED AT LINE 408
+                    > USED AT LINE 397
+USER:               02A2 DEFINED AT LINE 411
+                    > USED AT LINE 561
+USER02:             02B4 DEFINED AT LINE 419
+                    > USED AT LINE 426
+USER03:             02B7 DEFINED AT LINE 420
+                    > USED AT LINE 415
+USER05:             02C9 DEFINED AT LINE 428
+                    > USED AT LINE 418
+TSTSNB:             02D4 DEFINED AT LINE 436
+                    > USED AT LINE 939
+TSN02:              02E7 DEFINED AT LINE 446
+                    > USED AT LINE 441
+TSTNBR:             02E8 DEFINED AT LINE 449
+                    > USED AT LINE 103
+                    > USED AT LINE 438
+                    > USED AT LINE 440
+                    > USED AT LINE 739
+                    > USED AT LINE 978
+                    > USED AT LINE 992
+TSTN20:             02F6 DEFINED AT LINE 455
+TSTN23:             02FC DEFINED AT LINE 458
+                    > USED AT LINE 478
+TSTN02:             031F DEFINED AT LINE 479
+                    > USED AT LINE 451
+TSTN03:             0325 DEFINED AT LINE 482
+                    > USED AT LINE 506
+TSTN07:             0352 DEFINED AT LINE 507
+                    > USED AT LINE 460
+                    > USED AT LINE 484
+TSTN09:             0356 DEFINED AT LINE 509
+                    > USED AT LINE 454
+TSTN11:             0359 DEFINED AT LINE 511
+                    > USED AT LINE 466
+                    > USED AT LINE 491
+                    > USED AT LINE 494
+                    > USED AT LINE 496
+                    > USED AT LINE 499
+                    > USED AT LINE 502
+TSTSTK:             0360 DEFINED AT LINE 517
+                    > USED AT LINE 185
+                    > USED AT LINE 567
+                    > USED AT LINE 754
+                    > USED AT LINE 821
+PEEK:               036B DEFINED AT LINE 524
+                    > USED AT LINE 564
+POKE:               037A DEFINED AT LINE 534
+                    > USED AT LINE 1043
+POKE05:             0389 DEFINED AT LINE 540
+                    > USED AT LINE 538
+TSTFUN:             039C DEFINED AT LINE 550
+                    > USED AT LINE 741
+TSTF05:             03AB DEFINED AT LINE 556
+                    > USED AT LINE 554
+FUNT:               03AC DEFINED AT LINE 559
+FLINE:              03C0 DEFINED AT LINE 571
+                    > USED AT LINE 810
+                    > USED AT LINE 818
+                    > USED AT LINE 999
+FNDLIN:             03C2 DEFINED AT LINE 572
+                    > USED AT LINE 140
+                    > USED AT LINE 592
+FND03:              03C9 DEFINED AT LINE 576
+                    > USED AT LINE 573
+FND05:              03D1 DEFINED AT LINE 580
+                    > USED AT LINE 577
+FND07:              03D8 DEFINED AT LINE 584
+                    > USED AT LINE 580
+FND09:              03DE DEFINED AT LINE 587
+                    > USED AT LINE 589
+RELEXP:             03EA DEFINED AT LINE 595
+                    > USED AT LINE 801
+REL03:              040A DEFINED AT LINE 611
+                    > USED AT LINE 602
+REL05:              0415 DEFINED AT LINE 616
+                    > USED AT LINE 607
+REL06:              0419 DEFINED AT LINE 618
+                    > USED AT LINE 600
+REL07:              041D DEFINED AT LINE 620
+                    > USED AT LINE 610
+                    > USED AT LINE 617
+REL08:              0435 DEFINED AT LINE 634
+                    > USED AT LINE 632
+REL09:              043B DEFINED AT LINE 638
+                    > USED AT LINE 636
+EXPR:               0441 DEFINED AT LINE 644
+                    > USED AT LINE 421
+                    > USED AT LINE 541
+                    > USED AT LINE 595
+                    > USED AT LINE 621
+                    > USED AT LINE 761
+                    > USED AT LINE 792
+                    > USED AT LINE 808
+                    > USED AT LINE 815
+                    > USED AT LINE 850
+EXPR02:             0450 DEFINED AT LINE 651
+                    > USED AT LINE 657
+EXPR03:             0452 DEFINED AT LINE 652
+                    > USED AT LINE 650
+EXPR04:             0454 DEFINED AT LINE 653
+                    > USED AT LINE 665
+EXPR05:             0463 DEFINED AT LINE 660
+                    > USED AT LINE 648
+EXPR06:             046D DEFINED AT LINE 666
+                    > USED AT LINE 612
+                    > USED AT LINE 659
+TERM:               0470 DEFINED AT LINE 670
+                    > USED AT LINE 652
+                    > USED AT LINE 661
+TERM03:             0475 DEFINED AT LINE 672
+                    > USED AT LINE 712
+                    > USED AT LINE 729
+TERM05:             0483 DEFINED AT LINE 679
+                    > USED AT LINE 676
+DIV05:              049F DEFINED AT LINE 693
+                    > USED AT LINE 704
+DIV07:              04A9 DEFINED AT LINE 698
+                    > USED AT LINE 694
+DIV09:              04AB DEFINED AT LINE 699
+                    > USED AT LINE 697
+TERM06:             04C0 DEFINED AT LINE 711
+                    > USED AT LINE 708
+TERM07:             04C4 DEFINED AT LINE 713
+                    > USED AT LINE 674
+MULT:               04C8 DEFINED AT LINE 715
+FACT:               04E3 DEFINED AT LINE 732
+                    > USED AT LINE 670
+                    > USED AT LINE 680
+                    > USED AT LINE 714
+FACT02:             04F0 DEFINED AT LINE 738
+                    > USED AT LINE 740
+                    > USED AT LINE 742
+FACT03:             04F1 DEFINED AT LINE 739
+                    > USED AT LINE 733
+PAREXP:             04FB DEFINED AT LINE 743
+                    > USED AT LINE 524
+                    > USED AT LINE 534
+FACT05:             050B DEFINED AT LINE 751
+                    > USED AT LINE 748
+                    > USED AT LINE 759
+ARGONE:             050E DEFINED AT LINE 754
+                    > USED AT LINE 411
+                    > USED AT LINE 743
+FACT04:             0516 DEFINED AT LINE 757
+                    > USED AT LINE 755
+ABSX:               0522 DEFINED AT LINE 764
+                    > USED AT LINE 685
+                    > USED AT LINE 687
+NEGX:               0526 DEFINED AT LINE 766
+                    > USED AT LINE 710
+NEG05:              052E DEFINED AT LINE 770
+                    > USED AT LINE 765
+                    > USED AT LINE 768
+TSTEOL:             052F DEFINED AT LINE 773
+                    > USED AT LINE 309
+                    > USED AT LINE 542
+                    > USED AT LINE 793
+                    > USED AT LINE 809
+                    > USED AT LINE 816
+                    > USED AT LINE 835
+                    > USED AT LINE 995
+TEOL03:             053B DEFINED AT LINE 778
+                    > USED AT LINE 776
+LET:                0540 DEFINED AT LINE 783
+                    > USED AT LINE 323
+                    > USED AT LINE 1028
+LET03:              0548 DEFINED AT LINE 786
+                    > USED AT LINE 784
+LET05:              0554 DEFINED AT LINE 791
+                    > USED AT LINE 789
+IF:                 0566 DEFINED AT LINE 801
+                    > USED AT LINE 1031
+IF03:               056F DEFINED AT LINE 805
+                    > USED AT LINE 803
+GOTO:               0572 DEFINED AT LINE 808
+                    > USED AT LINE 1034
+GOSUB:              057F DEFINED AT LINE 815
+                    > USED AT LINE 1037
+GOSB04:             058B DEFINED AT LINE 820
+                    > USED AT LINE 811
+GOSB03:             058E DEFINED AT LINE 821
+                    > USED AT LINE 819
+GOSB05:             0596 DEFINED AT LINE 824
+                    > USED AT LINE 822
+RETURN:             052F DEFINED AT LINE 835
+                    > USED AT LINE 1040
+PRINT:              05AA DEFINED AT LINE 838
+                    > USED AT LINE 1046
+                    > USED AT LINE 1070
+PR01:               05AD DEFINED AT LINE 839
+                    > USED AT LINE 874
+PR02:               05C3 DEFINED AT LINE 850
+                    > USED AT LINE 846
+PR03:               05CC DEFINED AT LINE 854
+                    > USED AT LINE 849
+PR04:               05DE DEFINED AT LINE 862
+                    > USED AT LINE 844
+                    > USED AT LINE 860
+PR05:               05E7 DEFINED AT LINE 866
+                    > USED AT LINE 840
+                    > USED AT LINE 856
+PR06:               05E9 DEFINED AT LINE 867
+                    > USED AT LINE 870
+PR07:               05F2 DEFINED AT LINE 871
+                    > USED AT LINE 842
+                    > USED AT LINE 858
+PR08:               05FB DEFINED AT LINE 875
+                    > USED AT LINE 865
+PRQ01:              0600 DEFINED AT LINE 879
+                    > USED AT LINE 885
+PRNTQS:             0603 DEFINED AT LINE 880
+                    > USED AT LINE 848
+PRQ03:              060C DEFINED AT LINE 884
+                    > USED AT LINE 882
+PRNTN:              0611 DEFINED AT LINE 888
+                    > USED AT LINE 852
+PRN03:              0621 DEFINED AT LINE 897
+                    > USED AT LINE 889
+PRN05:              0624 DEFINED AT LINE 898
+                    > USED AT LINE 902
+PRN07:              0630 DEFINED AT LINE 903
+                    > USED AT LINE 900
+                    > USED AT LINE 917
+                    > USED AT LINE 926
+PRN09:              0632 DEFINED AT LINE 904
+                    > USED AT LINE 908
+PRN11:              063D DEFINED AT LINE 909
+                    > USED AT LINE 905
+PRN13:              0651 DEFINED AT LINE 918
+                    > USED AT LINE 915
+PRNPT:              0652 DEFINED AT LINE 919
+PRNPTO:             065A DEFINED AT LINE 923
+PRNT4:              065C DEFINED AT LINE 925
+                    > USED AT LINE 249
+                    > USED AT LINE 1008
+INPUT:              0661 DEFINED AT LINE 929
+                    > USED AT LINE 1049
+IN03:               066A DEFINED AT LINE 933
+                    > USED AT LINE 938
+                    > USED AT LINE 944
+IN05:               0672 DEFINED AT LINE 936
+                    > USED AT LINE 962
+                    > USED AT LINE 964
+IN07:               0689 DEFINED AT LINE 945
+                    > USED AT LINE 940
+IN09:               069B DEFINED AT LINE 953
+                    > USED AT LINE 951
+IN11:               06A2 DEFINED AT LINE 956
+                    > USED AT LINE 930
+IN13:               06A5 DEFINED AT LINE 957
+                    > USED AT LINE 955
+RMESS:              06B6 DEFINED AT LINE 965
+RUN:                06BF DEFINED AT LINE 969
+                    > USED AT LINE 1061
+RUN01:              06C3 DEFINED AT LINE 971
+                    > USED AT LINE 973
+LIST:               06CD DEFINED AT LINE 978
+                    > USED AT LINE 1064
+LIST03:             06DA DEFINED AT LINE 985
+                    > USED AT LINE 979
+LIST05:             06E7 DEFINED AT LINE 991
+                    > USED AT LINE 988
+LIST07:             06F1 DEFINED AT LINE 995
+                    > USED AT LINE 984
+                    > USED AT LINE 990
+                    > USED AT LINE 993
+LIST09:             06FD DEFINED AT LINE 1000
+                    > USED AT LINE 1018
+LIST10:             0729 DEFINED AT LINE 1019
+                    > USED AT LINE 1001
+LIST11:             0730 DEFINED AT LINE 1022
+                    > USED AT LINE 1004
+VERBT:              0735 DEFINED AT LINE 1026
+TSTBRK:             079A DEFINED AT LINE 1074
+                    > USED AT LINE 318
+                    > USED AT LINE 1017
+GETCHR:             079E DEFINED AT LINE 1076
+                    > USED AT LINE 260
+GETC05:             07A7 DEFINED AT LINE 1080
+                    > USED AT LINE 1075
+                    > USED AT LINE 1078
+PUTCHR:             07A8 DEFINED AT LINE 1081
+                    > USED AT LINE 101
+                    > USED AT LINE 215
+                    > USED AT LINE 247
+                    > USED AT LINE 251
+                    > USED AT LINE 270
+                    > USED AT LINE 282
+                    > USED AT LINE 295
+                    > USED AT LINE 297
+                    > USED AT LINE 868
+                    > USED AT LINE 879
+                    > USED AT LINE 895
+                    > USED AT LINE 912
+                    > USED AT LINE 934
+                    > USED AT LINE 1011
+                    > USED AT LINE 1021
+INEEE:              07AD DEFINED AT LINE 1085
+                    > USED AT LINE 1076
+                    > USED AT LINE 1086
+OUTEEE:             07B7 DEFINED AT LINE 1090
+                    > USED AT LINE 1082
+OUT01:              07B9 DEFINED AT LINE 1091
+                    > USED AT LINE 1093
+BRKEEE:             07C6 DEFINED AT LINE 1097
+                    > USED AT LINE 1074
+                    > USED AT LINE 1085
+BRK03:              07C8 DEFINED AT LINE 1098
+                    > USED AT LINE 1102
+BRK05:              07D4 DEFINED AT LINE 1103
+                    > USED AT LINE 1100
+INTEEE:             07E3 DEFINED AT LINE 1111
+                    > USED AT LINE 79
+                    > USED AT LINE 83
+END:                07E4 DEFINED AT LINE 1118
+                    > USED AT LINE 1055
+                    > USED AT LINE 1058
