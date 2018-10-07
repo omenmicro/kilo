@@ -2357,6 +2357,12 @@ design rules under a new name.</description>
 <wire x1="25.146" y1="12.8016" x2="25.4" y2="12.7" width="0.6096" layer="16"/>
 <via x="41.0718" y="64.0842" extent="1-16" drill="0.35"/>
 <via x="23.3934" y="14.2494" extent="1-16" drill="0.35"/>
+<polygon width="0.3048" layer="16">
+<vertex x="0" y="80.01"/>
+<vertex x="100.33" y="80.01"/>
+<vertex x="100.33" y="0"/>
+<vertex x="0" y="0"/>
+</polygon>
 </signal>
 <signal name="PHI0">
 <contactref element="Q1" pad="P$1"/>
@@ -2463,6 +2469,12 @@ design rules under a new name.</description>
 <wire x1="58.575265625" y1="48.415265625" x2="59.534734375" y2="48.415265625" width="0.6096" layer="1"/>
 <wire x1="59.534734375" y1="48.415265625" x2="59.69" y2="48.26" width="0.6096" layer="1"/>
 <wire x1="59.69" y1="48.26" x2="59.69" y2="46.99" width="0.6096" layer="16"/>
+<polygon width="0.3048" layer="1">
+<vertex x="0" y="80.01"/>
+<vertex x="100.33" y="80.01"/>
+<vertex x="100.33" y="0"/>
+<vertex x="0" y="0"/>
+</polygon>
 </signal>
 <signal name="A0">
 <contactref element="IC3" pad="10"/>
@@ -3372,16 +3384,17 @@ design rules under a new name.</description>
 <wire x1="40.3098" y1="16.1544" x2="37.5666" y2="18.8976" width="0.1524" layer="1"/>
 <wire x1="41.6814" y1="16.1544" x2="40.3098" y2="16.1544" width="0.1524" layer="1"/>
 <wire x1="44.1198" y1="13.716" x2="41.6814" y2="16.1544" width="0.1524" layer="1"/>
-<wire x1="44.1198" y1="12.3444" x2="44.1198" y2="13.716" width="0.1524" layer="1"/>
-<wire x1="50.4444" y1="6.0198" x2="44.1198" y2="12.3444" width="0.1524" layer="1"/>
-<wire x1="70.1802" y1="6.0198" x2="50.4444" y2="6.0198" width="0.1524" layer="1"/>
-<wire x1="71.12" y1="5.08" x2="70.1802" y2="6.0198" width="0.1524" layer="1"/>
+<wire x1="44.1198" y1="3.4544" x2="44.1198" y2="13.716" width="0.1524" layer="1"/>
+<wire x1="45.3644" y1="2.2098" x2="44.1198" y2="3.4544" width="0.1524" layer="1"/>
+<wire x1="70.7898" y1="2.2098" x2="45.3644" y2="2.2098" width="0.1524" layer="1"/>
 <wire x1="2.5908" y1="68.58" x2="2.54" y2="68.58" width="0.1524" layer="16"/>
 <via x="6.6294" y="64.5414" extent="1-16" drill="0.35"/>
 <via x="10.4394" y="64.5414" extent="1-16" drill="0.35"/>
 <via x="23.7744" y="51.2064" extent="1-16" drill="0.35"/>
 <via x="36.1188" y="21.1836" extent="1-16" drill="0.35"/>
 <via x="37.5666" y="21.0312" extent="1-16" drill="0.35"/>
+<wire x1="71.12" y1="2.54" x2="70.7898" y2="2.2098" width="0.1524" layer="1"/>
+<wire x1="71.12" y1="5.08" x2="71.12" y2="2.54" width="0.1524" layer="1"/>
 </signal>
 <signal name="/BUSACK">
 <contactref element="JP1" pad="28"/>
@@ -3457,7 +3470,8 @@ design rules under a new name.</description>
 <wire x1="87.63" y1="60.4454" x2="87.63" y2="63.5" width="0.3048" layer="1"/>
 <wire x1="87.63" y1="63.5" x2="87.63" y2="73.66" width="0.3048" layer="1"/>
 <wire x1="88.5952" y1="59.4802" x2="87.63" y2="60.4454" width="0.3048" layer="1"/>
-<wire x1="72.2376" y1="21.4376" x2="86.963" y2="21.4376" width="0.3048" layer="1"/>
+<wire x1="72.2376" y1="21.4376" x2="72.39" y2="21.4376" width="0.3048" layer="1"/>
+<wire x1="72.39" y1="21.4376" x2="86.963" y2="21.4376" width="0.3048" layer="1"/>
 <wire x1="90.6272" y1="49.20478125" x2="88.5952" y2="51.23678125" width="0.3048" layer="1"/>
 <wire x1="88.5952" y1="51.23678125" x2="88.5952" y2="59.4802" width="0.3048" layer="1"/>
 <wire x1="86.963" y1="21.4376" x2="90.6272" y2="25.1018" width="0.3048" layer="1"/>
@@ -3476,8 +3490,9 @@ design rules under a new name.</description>
 <wire x1="39.0144" y1="63.8556" x2="9.2456" y2="63.8556" width="0.3048" layer="1"/>
 <wire x1="43.18" y1="64.77" x2="40.64" y2="62.23" width="0.3048" layer="1"/>
 <wire x1="40.64" y1="62.23" x2="39.0144" y2="63.8556" width="0.3048" layer="1"/>
+<wire x1="71.12" y1="20.32" x2="71.2724" y2="20.32" width="0.3048" layer="1"/>
+<wire x1="71.2724" y1="20.32" x2="72.39" y2="21.4376" width="0.3048" layer="1"/>
 <wire x1="48.26" y1="63.5" x2="48.26" y2="62.23" width="0" layer="19" extent="1-1"/>
-<wire x1="71.12" y1="20.32" x2="72.2376" y2="21.4376" width="0" layer="19" extent="1-1"/>
 </signal>
 </signals>
 <mfgpreviewcolors>
