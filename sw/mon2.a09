@@ -1,0 +1,597 @@
+; OMEN KILO monitor version 1.0
+; (C) 2018 Martin Maly <maly@maly.cz>
+; Published under the terms of MIT license
+
+; Commands:
+; =========
+; M - list / change memory
+; D - Dump memory
+;   Enter moves to the next cell, backspace moves to the previous, space ends
+; G - Jump to memory
+; U - List and call user modules
+; W - Dump memory (from, to) as a SREC19 record
+; X - Dump memory (from, to) as a HEX record
+; : - read a HEX line (you can send the HEX record directly into the terminal)
+; S - read a SREC line (not yet implemented)
+
+            .ENGINE kilo 
+            .pragma srec
+
+;zero page
+            .BSSEG  
+            .ORG    0 
+Q_ADD:      DS      2 ; address
+Q_KEY:      DS      1 ; last key pressed
+Q_HEXCNT:   DS      1 ; for hex/srec: number of bytes
+Q_HEXADD:   DS      2 ; for hex/srec: address
+Q_HEXADD2:  DS      2 
+q_subr: ds 2
+
+            .CSEG   
+
+; for generating EEPROM image, use this:
+;.org $0000
+;.phase $E000
+            .ORG    $E000 
+            .ENT    $ 
+
+; Vector table
+; E000 - reset
+; E003 - read a character from the serial port
+; E006 - print a character
+; E009 - print 2digit hex number from A
+; E00C - print 4digit hex number from X
+; E00F - print immediatelly stored ASCIIZ string
+
+            JMP     reset 
+            JMP     serin 
+            JMP     serout 
+            JMP     print2 
+            JMP     printx 
+            JMP     primm 
+RESET:              
+            LDS     #$8000 
+            ORCC    #$50 
+            LDA     #$15 
+            STA     ACIAC 
+            LDA     #0 
+            TFR     a,dp 
+
+
+WARM:               
+            JSR     primm 
+            .CSTR   "KILO Monitor v2" 
+MAINCRLF:           
+            JSR     pcrlf 
+MAIN:               
+            JSR     prompt 
+MAINSHORT:          
+            JSR     serin 
+            CMPA    #":" 
+            BEQ     m_hex 
+            CMPA    #$0d 
+            BEQ     mainshort 
+            CMPA    #$a 
+            BEQ     mainshort 
+
+;caps fix
+            ANDA    #$DF 
+            CMPA    #"M" 
+            LBEQ    m_mem 
+            CMPA    #"D" 
+            LBEQ    m_dump 
+            CMPA    #"G" 
+            LBEQ    m_go 
+            CMPA    #"U" 
+            LBEQ    m_user 
+            CMPA    #"W" 
+            LBEQ    m_writesrec 
+            CMPA    #"X" 
+            LBEQ    m_writehex 
+
+WHAT:               
+            JSR     primm 
+            .CSTR   "What?" 
+            JMP     maincrlf 
+
+M_HEX:              
+            JSR     gethex2 
+            STA     q_hexcnt 
+            JSR     gethex4 
+            STX     q_hexadd 
+            JSR     gethex2 
+            CMPA    #$00 
+            BNE     m_hexend 
+M_HEX_LOOP:         
+            JSR     gethex2 
+            STA     ,x+ 
+;inc q_hexadd
+            DEC     q_hexcnt 
+            BNE     m_hex_loop 
+            LDA     #"*" 
+            JSR     serout 
+M_HEX_WAITEND:      
+            JSR     serin 
+            CMPA    #$0d 
+            BEQ     main 
+            CMPA    #$0a 
+            BEQ     m_hex_waitend 
+            CMPA    #":" 
+            BEQ     m_hex 
+            BRA     m_hex_waitend 
+M_HEXEND:           
+;jsr gethex2
+            BRA     maincrlf 
+
+
+M_MEM:              
+            JSR     getaddr 
+            LDX     q_add 
+M_MEM_LINE:         
+            JSR     pcrlf 
+            JSR     printx 
+            JSR     primm 
+            .CSTR   " [" 
+            LDA     ,x+ 
+            STA     q_add+1 
+            JSR     print2 
+            JSR     primm 
+            .CSTR   "] " 
+            JSR     get4x 
+            CMPA    #$A0 
+            LBEQ    maincrlf 
+            CMPA    #$88 
+            BEQ     m_mem_back 
+            CMPA    #$8d 
+            BNE     m_mem_line 
+            LDA     q_add+1 
+            STA     [-1,x] 
+            JMP     m_mem_line 
+M_MEM_BACK:         
+            LDA     q_add+1 
+            STA     [-1,x] 
+            LEAX    -2,x 
+            JMP     m_mem_line 
+
+
+M_DUMP:             
+            JSR     getaddr 
+            LDX     q_add 
+            JSR     pcrlf 
+M_DUMP_LINE:        
+            JSR     printx 
+            JSR     primm 
+            .CSTR   ": " 
+            LDB     #$10 
+M_DUMP_LOOP:        
+            LDA     ,x+ 
+            JSR     print2 
+            LDA     #$20 
+            JSR     serout 
+            DECB    
+            BNE     m_dump_loop 
+            JSR     pcrlf 
+M_DUMP_WAIT:        
+            JSR     serin 
+            CMPA    #$0d 
+            BEQ     m_dump_line 
+            CMPA    #$20 
+            LBEQ    main 
+            CMPA    #$08 
+            BNE     m_dump_wait 
+            LEAX    -32,x 
+            JMP     m_dump_line 
+
+M_GO:               
+            JSR     getaddr 
+            JMP     [q_add] 
+
+M_U_FNEXT:          
+            LDA     3,x 
+            CMPA    #"M" 
+            BNE     m_u_fnext_e 
+            LDA     4,x 
+            CMPA    #"O" 
+            BNE     m_u_fnext_e 
+            LDA     5,x 
+            CMPA    #"D" 
+            BNE     m_u_fnext_e 
+            LDA     6,x 
+            CMPA    #"9" 
+M_U_FNEXT_E:        
+            RTS     
+
+M_USER:             
+            JSR     primm 
+            .CSTR   "Installed modules:",$d,$a 
+            LDD     #mon_end 
+            CLRB    
+            INCA    
+            PSHS    d 
+            PULS    x 
+            LDB     #$41 
+M_U_FIND:           
+            JSR     m_u_fnext 
+            BNE     m_u_next 
+;found
+            LDA     #"[" 
+            JSR     serout 
+            TFR     b,a 
+            JSR     serout 
+            INCB    
+            LDA     #"]" 
+            JSR     serout 
+            LDA     #" " 
+            JSR     serout 
+            PSHS    x 
+            LEAX    7,x 
+            JSR     strout 
+            JSR     pcrlf 
+            PULS    x 
+M_U_NEXT:           
+            LEAX    256,x 
+            BNE     m_u_find 
+
+            JSR     primm 
+            .CSTR   "Select module to run: " 
+
+M_U_SEL:            
+            JSR     serin 
+            CMPA    #$20 
+            LBEQ    main 
+            CMPA    #$0d 
+            LBEQ    main 
+            SUBA    #$41 
+            LBLT    main 
+
+            PSHS    a 
+            LDD     #mon_end 
+            CLRB    
+            INCA    
+            PSHS    d 
+            PULS    x 
+            PULS    b 
+M_U_SELF:           
+            JSR     m_u_fnext 
+            BNE     m_u_seln 
+            CMPB    #0 
+            BEQ     m_u_found 
+            DECB    
+M_U_SELN:           
+            LEAX    256,x 
+            BNE     m_u_self 
+            JMP     m_u_sel 
+M_U_FOUND:          
+            PSHS    x 
+            RTS     
+
+
+M_WRITEHEX:        
+    ldx #m_whexline
+    stx q_subr
+    jsr m_wrbody
+
+            JSR     primm 
+            .CSTR   ":00000001FF",$d,$a 
+            JMP     main 
+
+M_WRITEsrec:        
+    ldx #m_wsline
+    stx q_subr
+    jsr m_wrbody
+
+            JSR     primm 
+            .CSTR   "S9030000FC",$d,$a 
+            JMP     main 
+
+    
+m_wrbody:
+            JSR     primm 
+            .CSTR   "From:" 
+            JSR     get4 
+            LDX     q_add 
+            STX     q_hexadd 
+            JSR     primm 
+            .CSTR   $d,$a,"To:" 
+            JSR     get4 
+            LDX     q_add 
+            STX     q_hexadd2 
+            JSR     pcrlf 
+M_WHL:              
+            LDA     q_hexadd 
+            CMPA    q_hexadd2 
+            BNE     m_wh10 
+            LDA     q_hexadd2+1 
+            SUBA    q_hexadd+1 
+            BEQ     m_whend 
+            CMPA    #$10 
+            BLO     m_whx 
+M_WH10:             
+            LDA     #$10 
+M_WHX:              
+            STA     q_hexcnt 
+            JSR     [q_subr]
+            LDA     q_hexadd 
+            CMPA    q_hexadd2 
+            BLS     m_whl 
+            LDA     q_hexadd+1 
+            CMPA    q_hexadd2+1 
+            BLS     m_whl 
+m_whend:
+ rts
+            
+M_WHEXLINE:         
+            LDA     #":" 
+            JSR     serout 
+            LDA     q_hexcnt 
+            JSR     print2 
+            LDX     q_hexadd 
+            JSR     printx 
+            LDA     #0 
+            JSR     print2 
+            LDB     q_hexcnt 
+            ADDB    q_hexadd 
+            ADDB    q_hexadd+1 
+
+MWHLOOP:            
+            ADDB    ,x 
+            LDA     ,x+ 
+            JSR     print2 
+            DEC     q_hexcnt 
+            BNE     mwhloop 
+            STX     q_hexadd 
+            TFR     b,a 
+            NEGA    
+            JSR     print2 
+            JSR     pcrlf 
+            RTS     
+            
+M_WSLINE:         
+            LDA     #"S" 
+            JSR     serout 
+            LDA     #"1" 
+            JSR     serout 
+            LDA     q_hexcnt 
+            adda #3
+            JSR     print2 
+            LDX     q_hexadd 
+            JSR     printx 
+            LDA     #0 
+            JSR     print2 
+            LDB     q_hexcnt 
+            ADDB    q_hexadd 
+            ADDB    q_hexadd+1 
+            addb #3
+MWSLOOP:            
+            ADDB    ,x 
+            LDA     ,x+ 
+            JSR     print2 
+            DEC     q_hexcnt 
+            BNE     mwsloop 
+            STX     q_hexadd 
+            TFR     b,a 
+            NEGA    
+            JSR     print2 
+            JSR     pcrlf 
+            RTS     
+
+
+; ----------------------------------------
+; End of monitor commands
+; Here starts the useful routines
+
+; Print the 4digit hex number from the X register
+PRINTX:             
+            TFR     x,d 
+            JSR     print2 
+            TFR     b,a 
+
+; Print the 2digit hex number from the A register
+
+PRINT2:             
+            PSHS    a 
+            LSRA    
+            LSRA    
+            LSRA    
+            LSRA    
+            JSR     printhex 
+            PULS    a 
+            ANDA    #$0f 
+; Print one hex digit from register A
+PRINTHEX:           
+            CMPA    #$0a 
+            BHS     ph2 
+            ADDA    #$30 
+            JMP     serout 
+PH2:                
+            ADDA    #$37 
+            JMP     serout 
+
+; Prompt for address
+GETADDR:            
+            JSR     primm 
+            .CSTR   "Addr:" 
+;JSR     get4
+;RTS
+
+; Read 4digit hex address
+; The value is in q_add variable (ZP)
+GET4:               
+            LDD     #0 
+            STD     q_add 
+GET4X:              
+            JSR     gethex 
+            BPL     get4ok 
+            RTS     
+GET4OK:             
+            TFR     a,b 
+            JSR     printhex 
+            CLRA    
+            LSL     q_add+1 
+            ROL     q_add 
+            LSL     q_add+1 
+            ROL     q_add 
+            LSL     q_add+1 
+            ROL     q_add 
+            LSL     q_add+1 
+            ROL     q_add 
+            ADDD    q_add 
+            STD     q_add 
+
+            JMP     get4x 
+
+; Get 1 byte from serial to A (for .hex/.srec)
+
+GETHEX2:            
+            JSR     gethex 
+            LSLA    
+            LSLA    
+            LSLA    
+            LSLA    
+            STA     q_key 
+            JSR     gethex 
+            ADDA    q_key 
+            RTS     
+
+; Get 2 bytes from serial to X (for .hex/.srec)
+
+GETHEX4:            
+            JSR     gethex2 
+            PSHS    a 
+            JSR     gethex2 
+            TFR     a,b 
+            PULS    a 
+            TFR     d,x 
+            RTS     
+
+GETHEX:             
+            JSR     serin 
+            CMPA    #$30 
+            BHS     gh1 
+GHB:                
+            ORA     #$80 
+            RTS     
+GH1:                
+            CMPA    #$3A 
+            BHI     gh2 
+            SUBA    #$30 
+            RTS     
+GH2:                
+            CMPA    #"A" 
+            BLO     ghb 
+            CMPA    #"F" 
+            BHI     gh3 
+            SUBA    #55 
+            RTS     
+GH3:                
+            CMPA    #"a" 
+            BLO     ghb 
+            CMPA    #"f" 
+            BHI     ghb 
+            SUBA    #$57 
+            RTS     
+
+
+; serial
+
+ACIA        EQU     $83fe 
+ACIAC       EQU     ACIA 
+ACIAS       EQU     ACIA 
+ACIAD       EQU     ACIA+1 
+
+ACIA_TDRE   EQU     02h 
+ACIA_RDRF   EQU     01h 
+
+; Print null-terminated string to serial port
+; address of the string is in the X register
+
+STROUT:             
+            LDA     ,x+ 
+            BNE     sout2 
+            RTS     
+SOUT2:              
+            JSR     serout 
+            JMP     strout 
+
+; send one byte from A to serial
+
+SEROUT:             
+            PSHS    a,b 
+SEROUTL:            
+            LDB     ACIAS 
+            ANDB    #ACIA_TDRE 
+            BEQ     seroutl 
+            STA     ACIAD 
+            PULS    a,b 
+            RTS     
+
+; print CR LF
+PCRLF:              
+            LDA     #$d 
+            JSR     serout 
+            LDA     #$a 
+            JMP     serout 
+
+; print monitor prompt
+PROMPT:             
+            LDA     #">" 
+            JSR     serout 
+            LDA     #$20 
+            JMP     serout 
+
+; print immediate
+; Usage:
+;   JSR PRIMM
+;   .CSTR "string to print"
+
+PRIMM:              
+            PSHS    a,x 
+            LDX     3,s 
+PRIMM1:             
+            LDA     ,x+ 
+            BNE     primm2 
+            STX     3,s 
+            PULS    a,x,pc 
+PRIMM2:             
+            JSR     serout 
+            BRA     primm1 
+
+; Wait for serial char to read
+
+SERIN:              
+            LDA     ACIAS 
+            ANDA    #ACIA_RDRF 
+            BEQ     serin 
+            LDA     ACIAD 
+            RTS     
+
+MON_END     EQU     $ 
+
+; USER MODULES
+; see testmod.a09 to further information
+
+            .INCLUDE testmod.a09 
+
+            .INCLUDE basic.a09 
+
+
+
+            .ORG    0xfff0 
+;reserved
+            DW      reset 
+;SWI3
+            DW      reset 
+;SWI2
+            DW      reset 
+;FIRQ
+            DW      reset 
+;IRQ
+            DW      reset 
+;SWI
+            DW      reset 
+;NMI
+            DW      reset 
+;RES
+            DW      reset 
+
+
