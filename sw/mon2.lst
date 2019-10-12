@@ -1,0 +1,2759 @@
+0000                             ; OMEN KILO monitor version 2.0
+0000                             ; (C) 2018 Martin Maly <maly@maly.cz>
+0000                             ; Published under the terms of MIT license
+0000                             ; 
+0000                             ; Commands:
+0000                             ; =========
+0000                             ; M - list / change memory
+0000                             ; D - Dump memory
+0000                             ;   Enter moves to the next cell, backspace moves to the previous, space ends
+0000                             ; G - Jump to memory
+0000                             ; U - List and call user modules
+0000                             ; W - Dump memory (from, to) as a SREC19 record
+0000                             ; X - Dump memory (from, to) as a HEX record
+0000                             ; : - read a HEX line (you can send the HEX record directly into the terminal)
+0000                             ; S - read a SREC line (not yet implemented)
+0000                             ; 
+0000                          .ENGINE   kilo   
+0000                          .PRAGMA   srec   
+0000                             ; 
+0000                             ;zero page
+0000                          .BSSEG      
+0000                          .ORG   0   
+0000                Q_ADD:    DS   2   ; address
+0002                Q_KEY:    DS   1   ; last key pressed
+0003                Q_HEXCNT:   DS   1   ; for hex/srec: number of bytes
+0004                Q_HEXADD:   DS   2   ; for hex/srec: address
+0006                Q_HEXADD2:   DS   2   
+0008                Q_SUBR:   DS   2   
+000A                             ; 
+0000                          .CSEG      
+0000                             ; 
+0000                             ; for generating EEPROM image, use this:
+0000                             ;.org $0000
+0000                             ;.phase $E000
+E000                          .ORG   $E000   
+E000                          .ENT   $   
+E000                             ; 
+E000                             ; Vector table
+E000                             ; E000 - reset
+E000                             ; E003 - read a character from the serial port
+E000                             ; E006 - print a character
+E000                             ; E009 - print 2digit hex number from A
+E000                             ; E00C - print 4digit hex number from X
+E000                             ; E00F - print immediatelly stored ASCIIZ string
+E000                             ; 
+E000   7E E0 12               JMP   reset   
+E003   7E E3 A6               JMP   serin   
+E006   7E E3 72               JMP   serout   
+E009   7E E2 D6               JMP   print2   
+E00C   7E E2 CF               JMP   printx   
+E00F   7E E3 95               JMP   primm   
+E012                RESET:       
+E012   10 CE 80 00            LDS   #$8000   
+E016   1A 50                  ORCC   #$50   
+E018   86 15                  LDA   #$15   
+E01A   B7 83 FE               STA   ACIAC   
+E01D   86 00                  LDA   #0   
+E01F   1F 8B                  TFR   a,dp   
+E021                             ; 
+E021                             ; 
+E021                WARM:        
+E021   BD E3 95               JSR   primm   
+E024   4B 49 4C 4F 20 4D 6F 6E 69 74 6F 72 20 76 32 00 .CSTR   "KILO Monitor v2"   
+E034                MAINCRLF:      
+E034   BD E3 81               JSR   pcrlf   
+E037                MAIN:        
+E037   BD E3 8B               JSR   prompt   
+E03A                MAINSHORT:      
+E03A   BD E3 A6               JSR   serin   
+E03D   81 3A                  CMPA   #":"   
+E03F   27 3A                  BEQ   m_hex   
+E041   81 0D                  CMPA   #$0d   
+E043   27 F5                  BEQ   mainshort   
+E045   81 0A                  CMPA   #$a   
+E047   27 F1                  BEQ   mainshort   
+E049                             ; 
+E049                             ;caps fix
+E049   84 DF                  ANDA   #$DF   
+E04B   81 4D                  CMPA   #"M"   
+E04D   10 27 00 5C            LBEQ   m_mem   
+E051   81 44                  CMPA   #"D"   
+E053   10 27 00 95            LBEQ   m_dump   
+E057   81 47                  CMPA   #"G"   
+E059   10 27 00 C9            LBEQ   m_go   
+E05D   81 55                  CMPA   #"U"   
+E05F   10 27 00 E1            LBEQ   m_user   
+E063   81 57                  CMPA   #"W"   
+E065   10 27 01 98            LBEQ   m_writesrec   
+E069   81 58                  CMPA   #"X"   
+E06B   10 27 01 76            LBEQ   m_writehex   
+E06F                             ; 
+E06F                WHAT:        
+E06F   BD E3 95               JSR   primm   
+E072   57 68 61 74 3F 00      .CSTR   "What?"   
+E078   7E E0 34               JMP   maincrlf   
+E07B                             ; 
+E07B                M_HEX:       
+E07B   BD E3 22               JSR   gethex2   
+E07E   97 03                  STA   q_hexcnt   
+E080   BD E3 31               JSR   gethex4   
+E083   9F 04                  STX   q_hexadd   
+E085   BD E3 22               JSR   gethex2   
+E088   81 00                  CMPA   #$00   
+E08A   26 1F                  BNE   m_hexend   
+E08C                M_HEX_LOOP:      
+E08C   BD E3 22               JSR   gethex2   
+E08F   A7 80                  STA   ,x+   
+E091                             ;inc q_hexadd
+E091   0A 03                  DEC   q_hexcnt   
+E093   26 F7                  BNE   m_hex_loop   
+E095   86 2A                  LDA   #"*"   
+E097   BD E3 72               JSR   serout   
+E09A                M_HEX_WAITEND:      
+E09A   BD E3 A6               JSR   serin   
+E09D   81 0D                  CMPA   #$0d   
+E09F   27 96                  BEQ   main   
+E0A1   81 0A                  CMPA   #$0a   
+E0A3   27 F5                  BEQ   m_hex_waitend   
+E0A5   81 3A                  CMPA   #":"   
+E0A7   27 D2                  BEQ   m_hex   
+E0A9   20 EF                  BRA   m_hex_waitend   
+E0AB                M_HEXEND:      
+E0AB                             ;jsr gethex2
+E0AB   20 87                  BRA   maincrlf   
+E0AD                             ; 
+E0AD                             ; 
+E0AD                M_MEM:       
+E0AD   BD E2 F1               JSR   getaddr   
+E0B0   9E 00                  LDX   q_add   
+E0B2                M_MEM_LINE:      
+E0B2   BD E3 81               JSR   pcrlf   
+E0B5   BD E2 CF               JSR   printx   
+E0B8   BD E3 95               JSR   primm   
+E0BB   20 5B 00               .CSTR   " ["   
+E0BE   A6 80                  LDA   ,x+   
+E0C0   97 01                  STA   q_add+1   
+E0C2   BD E2 D6               JSR   print2   
+E0C5   BD E3 95               JSR   primm   
+E0C8   5D 20 00               .CSTR   "] "   
+E0CB   BD E2 FF               JSR   get4x   
+E0CE   81 A0                  CMPA   #$A0   
+E0D0   10 27 FF 60            LBEQ   maincrlf   
+E0D4   81 88                  CMPA   #$88   
+E0D6   27 0B                  BEQ   m_mem_back   
+E0D8   81 8D                  CMPA   #$8d   
+E0DA   26 D6                  BNE   m_mem_line   
+E0DC   96 01                  LDA   q_add+1   
+E0DE   A7 1F                  STA   [-1,x]   
+E0E0   7E E0 B2               JMP   m_mem_line   
+E0E3                M_MEM_BACK:      
+E0E3   96 01                  LDA   q_add+1   
+E0E5   A7 1F                  STA   [-1,x]   
+E0E7   30 1E                  LEAX   -2,x   
+E0E9   7E E0 B2               JMP   m_mem_line   
+E0EC                             ; 
+E0EC                             ; 
+E0EC                M_DUMP:      
+E0EC   BD E2 F1               JSR   getaddr   
+E0EF   9E 00                  LDX   q_add   
+E0F1   BD E3 81               JSR   pcrlf   
+E0F4                M_DUMP_LINE:      
+E0F4   BD E2 CF               JSR   printx   
+E0F7   BD E3 95               JSR   primm   
+E0FA   3A 20 00               .CSTR   ": "   
+E0FD   C6 10                  LDB   #$10   
+E0FF                M_DUMP_LOOP:      
+E0FF   A6 80                  LDA   ,x+   
+E101   BD E2 D6               JSR   print2   
+E104   86 20                  LDA   #$20   
+E106   BD E3 72               JSR   serout   
+E109   5A                     DECB      
+E10A   26 F3                  BNE   m_dump_loop   
+E10C   BD E3 81               JSR   pcrlf   
+E10F                M_DUMP_WAIT:      
+E10F   BD E3 A6               JSR   serin   
+E112   81 0D                  CMPA   #$0d   
+E114   27 DE                  BEQ   m_dump_line   
+E116   81 20                  CMPA   #$20   
+E118   10 27 FF 1B            LBEQ   main   
+E11C   81 08                  CMPA   #$08   
+E11E   26 EF                  BNE   m_dump_wait   
+E120   30 88 E0               LEAX   -32,x   
+E123   7E E0 F4               JMP   m_dump_line   
+E126                             ; 
+E126                M_GO:        
+E126   BD E2 F1               JSR   getaddr   
+E129   6E 9F 00 00            JMP   [q_add]   
+E12D                             ; 
+E12D                M_U_FNEXT:      
+E12D   A6 03                  LDA   3,x   
+E12F   81 4D                  CMPA   #"M"   
+E131   26 10                  BNE   m_u_fnext_e   
+E133   A6 04                  LDA   4,x   
+E135   81 4F                  CMPA   #"O"   
+E137   26 0A                  BNE   m_u_fnext_e   
+E139   A6 05                  LDA   5,x   
+E13B   81 44                  CMPA   #"D"   
+E13D   26 04                  BNE   m_u_fnext_e   
+E13F   A6 06                  LDA   6,x   
+E141   81 39                  CMPA   #"9"   
+E143                M_U_FNEXT_E:      
+E143   39                     RTS      
+E144                             ; 
+E144                M_USER:      
+E144   BD E3 95               JSR   primm   
+E147   49 6E 73 74 61 6C 6C 65 64 20 6D 6F 64 75 6C 65 73 3A 0D 0A 00 .CSTR   "Installed modules:",$d,$a   
+E15C   CC E3 B1               LDD   #mon_end   
+E15F   5F                     CLRB      
+E160   4C                     INCA      
+E161   34 06                  PSHS   d   
+E163   35 10                  PULS   x   
+E165   C6 41                  LDB   #$41   
+E167                M_U_FIND:      
+E167   BD E1 2D               JSR   m_u_fnext   
+E16A   26 21                  BNE   m_u_next   
+E16C                             ;found
+E16C   86 5B                  LDA   #"["   
+E16E   BD E3 72               JSR   serout   
+E171   1F 98                  TFR   b,a   
+E173   BD E3 72               JSR   serout   
+E176   5C                     INCB      
+E177   86 5D                  LDA   #"]"   
+E179   BD E3 72               JSR   serout   
+E17C   86 20                  LDA   #" "   
+E17E   BD E3 72               JSR   serout   
+E181   34 10                  PSHS   x   
+E183   30 07                  LEAX   7,x   
+E185   BD E3 67               JSR   strout   
+E188   BD E3 81               JSR   pcrlf   
+E18B   35 10                  PULS   x   
+E18D                M_U_NEXT:      
+E18D   30 89 01 00            LEAX   256,x   
+E191   26 D4                  BNE   m_u_find   
+E193                             ; 
+E193   BD E3 95               JSR   primm   
+E196   53 65 6C 65 63 74 20 6D 6F 64 75 6C 65 20 74 6F 20 72 75 6E 3A 20 00 .CSTR   "Select module to run: "   
+E1AD                             ; 
+E1AD                M_U_SEL:      
+E1AD   BD E3 A6               JSR   serin   
+E1B0   81 20                  CMPA   #$20   
+E1B2   10 27 FE 81            LBEQ   main   
+E1B6   81 0D                  CMPA   #$0d   
+E1B8   10 27 FE 7B            LBEQ   main   
+E1BC   80 41                  SUBA   #$41   
+E1BE   10 2D FE 75            LBLT   main   
+E1C2                             ; 
+E1C2   34 02                  PSHS   a   
+E1C4   CC E3 B1               LDD   #mon_end   
+E1C7   5F                     CLRB      
+E1C8   4C                     INCA      
+E1C9   34 06                  PSHS   d   
+E1CB   35 10                  PULS   x   
+E1CD   35 04                  PULS   b   
+E1CF                M_U_SELF:      
+E1CF   BD E1 2D               JSR   m_u_fnext   
+E1D2   26 05                  BNE   m_u_seln   
+E1D4   C1 00                  CMPB   #0   
+E1D6   27 0A                  BEQ   m_u_found   
+E1D8   5A                     DECB      
+E1D9                M_U_SELN:      
+E1D9   30 89 01 00            LEAX   256,x   
+E1DD   26 F0                  BNE   m_u_self   
+E1DF   7E E1 AD               JMP   m_u_sel   
+E1E2                M_U_FOUND:      
+E1E2   34 10                  PSHS   x   
+E1E4   39                     RTS      
+E1E5                             ; 
+E1E5                             ; 
+E1E5                M_WRITEHEX:      
+E1E5   8E E2 64               LDX   #m_whexline   
+E1E8   9F 08                  STX   q_subr   
+E1EA   BD E2 1C               JSR   m_wrbody   
+E1ED                             ; 
+E1ED   BD E3 95               JSR   primm   
+E1F0   3A 30 30 30 30 30 30 30 31 46 46 0D 0A 00 .CSTR   ":00000001FF",$d,$a   
+E1FE   7E E0 37               JMP   main   
+E201                             ; 
+E201                M_WRITESREC:      
+E201   8E E2 95               LDX   #m_wsline   
+E204   9F 08                  STX   q_subr   
+E206   BD E2 1C               JSR   m_wrbody   
+E209                             ; 
+E209   BD E3 95               JSR   primm   
+E20C   53 39 30 33 30 30 30 30 46 43 0D 0A 00 .CSTR   "S9030000FC",$d,$a   
+E219   7E E0 37               JMP   main   
+E21C                             ; 
+E21C                             ; 
+E21C                M_WRBODY:      
+E21C   BD E3 95               JSR   primm   
+E21F   46 72 6F 6D 3A 00      .CSTR   "From:"   
+E225   BD E2 FA               JSR   get4   
+E228   9E 00                  LDX   q_add   
+E22A   9F 04                  STX   q_hexadd   
+E22C   BD E3 95               JSR   primm   
+E22F   0D 0A 54 6F 3A 00      .CSTR   $d,$a,"To:"   
+E235   BD E2 FA               JSR   get4   
+E238   9E 00                  LDX   q_add   
+E23A   9F 06                  STX   q_hexadd2   
+E23C   BD E3 81               JSR   pcrlf   
+E23F                M_WHL:       
+E23F   96 04                  LDA   q_hexadd   
+E241   91 06                  CMPA   q_hexadd2   
+E243   26 0A                  BNE   m_wh10   
+E245   96 07                  LDA   q_hexadd2+1   
+E247   90 05                  SUBA   q_hexadd+1   
+E249   27 18                  BEQ   m_whend   
+E24B   81 10                  CMPA   #$10   
+E24D   25 02                  BLO   m_whx   
+E24F                M_WH10:      
+E24F   86 10                  LDA   #$10   
+E251                M_WHX:       
+E251   97 03                  STA   q_hexcnt   
+E253   AD 9F 00 08            JSR   [q_subr]   
+E257   96 04                  LDA   q_hexadd   
+E259   91 06                  CMPA   q_hexadd2   
+E25B   23 E2                  BLS   m_whl   
+E25D   96 05                  LDA   q_hexadd+1   
+E25F   91 07                  CMPA   q_hexadd2+1   
+E261   23 DC                  BLS   m_whl   
+E263                M_WHEND:      
+E263   39                     RTS      
+E264                             ; 
+E264                M_WHEXLINE:      
+E264   86 3A                  LDA   #":"   
+E266   BD E3 72               JSR   serout   
+E269   96 03                  LDA   q_hexcnt   
+E26B   BD E2 D6               JSR   print2   
+E26E   9E 04                  LDX   q_hexadd   
+E270   BD E2 CF               JSR   printx   
+E273   86 00                  LDA   #0   
+E275   BD E2 D6               JSR   print2   
+E278   D6 03                  LDB   q_hexcnt   
+E27A   DB 04                  ADDB   q_hexadd   
+E27C   DB 05                  ADDB   q_hexadd+1   
+E27E                             ; 
+E27E                MWHLOOP:      
+E27E   EB 84                  ADDB   ,x   
+E280   A6 80                  LDA   ,x+   
+E282   BD E2 D6               JSR   print2   
+E285   0A 03                  DEC   q_hexcnt   
+E287   26 F5                  BNE   mwhloop   
+E289   9F 04                  STX   q_hexadd   
+E28B   1F 98                  TFR   b,a   
+E28D   40                     NEGA      
+E28E   BD E2 D6               JSR   print2   
+E291   BD E3 81               JSR   pcrlf   
+E294   39                     RTS      
+E295                             ; 
+E295                M_WSLINE:      
+E295   86 53                  LDA   #"S"   
+E297   BD E3 72               JSR   serout   
+E29A   86 31                  LDA   #"1"   
+E29C   BD E3 72               JSR   serout   
+E29F   96 03                  LDA   q_hexcnt   
+E2A1   8B 03                  ADDA   #3   
+E2A3   BD E2 D6               JSR   print2   
+E2A6   9E 04                  LDX   q_hexadd   
+E2A8   BD E2 CF               JSR   printx   
+E2AB   86 00                  LDA   #0   
+E2AD   BD E2 D6               JSR   print2   
+E2B0   D6 03                  LDB   q_hexcnt   
+E2B2   DB 04                  ADDB   q_hexadd   
+E2B4   DB 05                  ADDB   q_hexadd+1   
+E2B6   CB 03                  ADDB   #3   
+E2B8                MWSLOOP:      
+E2B8   EB 84                  ADDB   ,x   
+E2BA   A6 80                  LDA   ,x+   
+E2BC   BD E2 D6               JSR   print2   
+E2BF   0A 03                  DEC   q_hexcnt   
+E2C1   26 F5                  BNE   mwsloop   
+E2C3   9F 04                  STX   q_hexadd   
+E2C5   1F 98                  TFR   b,a   
+E2C7   40                     NEGA      
+E2C8   BD E2 D6               JSR   print2   
+E2CB   BD E3 81               JSR   pcrlf   
+E2CE   39                     RTS      
+E2CF                             ; 
+E2CF                             ; 
+E2CF                             ; ----------------------------------------
+E2CF                             ; End of monitor commands
+E2CF                             ; Here starts the useful routines
+E2CF                             ; 
+E2CF                             ; Print the 4digit hex number from the X register
+E2CF                PRINTX:      
+E2CF   1F 10                  TFR   x,d   
+E2D1   BD E2 D6               JSR   print2   
+E2D4   1F 98                  TFR   b,a   
+E2D6                             ; 
+E2D6                             ; Print the 2digit hex number from the A register
+E2D6                             ; 
+E2D6                PRINT2:      
+E2D6   34 02                  PSHS   a   
+E2D8   44                     LSRA      
+E2D9   44                     LSRA      
+E2DA   44                     LSRA      
+E2DB   44                     LSRA      
+E2DC   BD E2 E3               JSR   printhex   
+E2DF   35 02                  PULS   a   
+E2E1   84 0F                  ANDA   #$0f   
+E2E3                             ; Print one hex digit from register A
+E2E3                PRINTHEX:      
+E2E3   81 0A                  CMPA   #$0a   
+E2E5   24 05                  BHS   ph2   
+E2E7   8B 30                  ADDA   #$30   
+E2E9   7E E3 72               JMP   serout   
+E2EC                PH2:         
+E2EC   8B 37                  ADDA   #$37   
+E2EE   7E E3 72               JMP   serout   
+E2F1                             ; 
+E2F1                             ; Prompt for address
+E2F1                GETADDR:      
+E2F1   BD E3 95               JSR   primm   
+E2F4   41 64 64 72 3A 00      .CSTR   "Addr:"   
+E2FA                             ;JSR     get4
+E2FA                             ;RTS
+E2FA                             ; 
+E2FA                             ; Read 4digit hex address
+E2FA                             ; The value is in q_add variable (ZP)
+E2FA                GET4:        
+E2FA   CC 00 00               LDD   #0   
+E2FD   DD 00                  STD   q_add   
+E2FF                GET4X:       
+E2FF   BD E3 40               JSR   gethex   
+E302   2A 01                  BPL   get4ok   
+E304   39                     RTS      
+E305                GET4OK:      
+E305   1F 89                  TFR   a,b   
+E307   BD E2 E3               JSR   printhex   
+E30A   4F                     CLRA      
+E30B   08 01                  LSL   q_add+1   
+E30D   09 00                  ROL   q_add   
+E30F   08 01                  LSL   q_add+1   
+E311   09 00                  ROL   q_add   
+E313   08 01                  LSL   q_add+1   
+E315   09 00                  ROL   q_add   
+E317   08 01                  LSL   q_add+1   
+E319   09 00                  ROL   q_add   
+E31B   D3 00                  ADDD   q_add   
+E31D   DD 00                  STD   q_add   
+E31F                             ; 
+E31F   7E E2 FF               JMP   get4x   
+E322                             ; 
+E322                             ; Get 1 byte from serial to A (for .hex/.srec)
+E322                             ; 
+E322                GETHEX2:      
+E322   BD E3 40               JSR   gethex   
+E325   48                     LSLA      
+E326   48                     LSLA      
+E327   48                     LSLA      
+E328   48                     LSLA      
+E329   97 02                  STA   q_key   
+E32B   BD E3 40               JSR   gethex   
+E32E   9B 02                  ADDA   q_key   
+E330   39                     RTS      
+E331                             ; 
+E331                             ; Get 2 bytes from serial to X (for .hex/.srec)
+E331                             ; 
+E331                GETHEX4:      
+E331   BD E3 22               JSR   gethex2   
+E334   34 02                  PSHS   a   
+E336   BD E3 22               JSR   gethex2   
+E339   1F 89                  TFR   a,b   
+E33B   35 02                  PULS   a   
+E33D   1F 01                  TFR   d,x   
+E33F   39                     RTS      
+E340                             ; 
+E340                GETHEX:      
+E340   BD E3 A6               JSR   serin   
+E343   81 30                  CMPA   #$30   
+E345   24 03                  BHS   gh1   
+E347                GHB:         
+E347   8A 80                  ORA   #$80   
+E349   39                     RTS      
+E34A                GH1:         
+E34A   81 3A                  CMPA   #$3A   
+E34C   22 03                  BHI   gh2   
+E34E   80 30                  SUBA   #$30   
+E350   39                     RTS      
+E351                GH2:         
+E351   81 41                  CMPA   #"A"   
+E353   25 F2                  BLO   ghb   
+E355   81 46                  CMPA   #"F"   
+E357   22 03                  BHI   gh3   
+E359   80 37                  SUBA   #55   
+E35B   39                     RTS      
+E35C                GH3:         
+E35C   81 61                  CMPA   #"a"   
+E35E   25 E7                  BLO   ghb   
+E360   81 66                  CMPA   #"f"   
+E362   22 E3                  BHI   ghb   
+E364   80 57                  SUBA   #$57   
+E366   39                     RTS      
+E367                             ; 
+E367                             ; 
+E367                             ; serial
+E367                             ; 
+E367                ACIA:     EQU   $83fe   
+E367                ACIAC:    EQU   ACIA   
+E367                ACIAS:    EQU   ACIA   
+E367                ACIAD:    EQU   ACIA+1   
+E367                             ; 
+E367                ACIA_TDRE:   EQU   02h   
+E367                ACIA_RDRF:   EQU   01h   
+E367                             ; 
+E367                             ; Print null-terminated string to serial port
+E367                             ; address of the string is in the X register
+E367                             ; 
+E367                STROUT:      
+E367   A6 80                  LDA   ,x+   
+E369   26 01                  BNE   sout2   
+E36B   39                     RTS      
+E36C                SOUT2:       
+E36C   BD E3 72               JSR   serout   
+E36F   7E E3 67               JMP   strout   
+E372                             ; 
+E372                             ; send one byte from A to serial
+E372                             ; 
+E372                SEROUT:      
+E372   34 06                  PSHS   a,b   
+E374                SEROUTL:      
+E374   F6 83 FE               LDB   ACIAS   
+E377   C4 02                  ANDB   #ACIA_TDRE   
+E379   27 F9                  BEQ   seroutl   
+E37B   B7 83 FF               STA   ACIAD   
+E37E   35 06                  PULS   a,b   
+E380   39                     RTS      
+E381                             ; 
+E381                             ; print CR LF
+E381                PCRLF:       
+E381   86 0D                  LDA   #$d   
+E383   BD E3 72               JSR   serout   
+E386   86 0A                  LDA   #$a   
+E388   7E E3 72               JMP   serout   
+E38B                             ; 
+E38B                             ; print monitor prompt
+E38B                PROMPT:      
+E38B   86 3E                  LDA   #">"   
+E38D   BD E3 72               JSR   serout   
+E390   86 20                  LDA   #$20   
+E392   7E E3 72               JMP   serout   
+E395                             ; 
+E395                             ; print immediate
+E395                             ; Usage:
+E395                             ;   JSR PRIMM
+E395                             ;   .CSTR "string to print"
+E395                             ; 
+E395                PRIMM:       
+E395   34 12                  PSHS   a,x   
+E397   AE 63                  LDX   3,s   
+E399                PRIMM1:      
+E399   A6 80                  LDA   ,x+   
+E39B   26 04                  BNE   primm2   
+E39D   AF 63                  STX   3,s   
+E39F   35 92                  PULS   a,x,pc   
+E3A1                PRIMM2:      
+E3A1   BD E3 72               JSR   serout   
+E3A4   20 F3                  BRA   primm1   
+E3A6                             ; 
+E3A6                             ; Wait for serial char to read
+E3A6                             ; 
+E3A6                SERIN:       
+E3A6   B6 83 FE               LDA   ACIAS   
+E3A9   84 01                  ANDA   #ACIA_RDRF   
+E3AB   27 F9                  BEQ   serin   
+E3AD   B6 83 FF               LDA   ACIAD   
+E3B0   39                     RTS      
+E3B1                             ; 
+E3B1                MON_END:   EQU   $   
+E3B1                             ; 
+E3B1                             ; thanks to all my Patrons
+E3B1                             ; see more at https://www.patreon.com/omenmicro
+E3B1                             ; 
+E3B1   44 61 6E 54 6F 6D 61 6E 65 6B 0D DB   "DanTomanek",0dh   
+E3BC   4B 61 6D 69 6C 5A 0D   DB   "KamilZ",0dh   
+E3C3                             ; 
+E3C3                             ; USER MODULES
+E3C3                             ; see testmod.a09 to further information
+E3C3                             ; 
+E3C3                             ; KILO ROM Module
+E3C3                             ; Needs these instructions on the begin:
+E3C3                          .CSEG      
+E3C3                          ALIGN   256   
+E400   7E E4 0F               JMP   testmod   ; Jump to the begin
+E403                             ; Needed signature: MOD9 + module name + trailing zero
+E403   4D 4F 44 39 54 65 73 74 4D 6F 64 00 .CSTR   "MOD9TestMod"   
+E40F                             ; Monitor vectors:
+E40F                MRESET:   EQU   $E000   
+E40F                MSERIN:   EQU   $E003   
+E40F                MSEROUT:   EQU   $E006   
+E40F                MPRINT2:   EQU   $E009   
+E40F                MPRINTX:   EQU   $E00C   
+E40F                MPRIMM:   EQU   $E00F   
+E40F                             ; here are your space:
+E40F                TESTMOD:      
+E40F   BD E0 0F               JSR   $E00F   
+E412   54 65 73 74 20 6D 6F 64 75 6C 65 0D 0A 00 .CSTR   "Test module",$0d,$0a   
+E420   7E E0 00               JMP   $e000   
+E423                             ; 
+E423                             ;NAM	TB01V137
+E423                             ;*	WRITTEN 20-OCT-77 BY JOHN BYRNS
+E423                             ;*	REVISED 30-DEC-77
+E423                             ;*	REVISED 18-JAN-78
+E423                             ;*	REVISED 10-APR-78
+E423                             ;*	REVISED 08-MAY-79 TO ELIMINATE USE OF SP
+E423                             ;*	REVISED 24-JAN-80 TO USE 6801 ON CHIP RAM
+E423                             ;*	REVISED 26-JAN-80 FOR NEW 6801 INSTRUCTIONS
+E423                             ;*	REVISED 24-JUL-81 FOR WHISTON BOARD
+E423                             ;*	REVISED 24-SEP-81 INCLUDE USER FUNCTION
+E423                             ;*	REVISED 08-APR-82 MAKE STANDALONE INCLUDE HEX CONSTANTS AND MEM FUNCTION
+E423                             ;*	REVISED 21-NOV-84 FOR 6809
+E423                             ;*	REVISED FEB 94 ADAPTED TO SIMULATOR AND BUGFIXES BY L.C. BENSCHOP.
+E423                             ;*
+E423                             ;.engine kilo
+E423                EOL:      EQU   $04   
+E423                ETX:      EQU   $03   
+E423                SPACE:    EQU   $20   
+E423                CR:       EQU   $0D   
+E423                LF:       EQU   $0A   
+E423                BS:       EQU   $08   
+E423                CAN:      EQU   $18   
+E423                BELL:     EQU   $07   
+E423                FILL:     EQU   $00   
+E423                DEL:      EQU   $7F   
+E423                BSIZE:    EQU   73   
+E423                STKCUS:   EQU   48   
+E423                             ;*
+E423                BACIA:    EQU   $83FE   
+E423                RMCR:     EQU   bACIA   
+E423                TRCS:     EQU   bACIA   
+E423                RECEV:    EQU   bACIA+1   
+E423                TRANS:    EQU   bACIA+1   
+E423                CNTL1:    EQU   $03   
+E423                CNTL2:    EQU   $15   
+E423                RDRF:     EQU   $01   
+E423                ORFE:     EQU   $20   
+E423                TDRE:     EQU   $02   
+E423                             ;* EDIT THE FOLLOWING EQUATES TO REFLECT THE
+E423                             ;* DESIRED ROM AND RAM LAYOUT
+E423                LORAM:    EQU   $0080   ;ADDRESS OF DIRECT PAGE SCRATCH RAM
+E423                BUFFER:   EQU   $0200   ;ADDRESS OF MAIN RAM
+E423                RAMSIZ:   EQU   $2000   ;SIZE OF MAIN RAM
+E423                ROMADR:   EQU   $f000   ;ADDRESS OF TINY BASIC ROM
+E423                             ;*
+E423                RAMBEG:   EQU   BUFFER+BSIZE   
+E423                RAMEND:   EQU   BUFFER+RAMSIZ   
+E423                             ;*
+E423                RAMPAT:   EQU   $AA0F   
+E423                ROMPAT:   EQU   $F055   
+E423                             ;*
+E423                             ;	ORG	LORAM
+000A                          .BSSEG      
+000A                USRBAS:   RMB   2   
+000C                USRTOP:   RMB   2   
+000E                STKLIM:   RMB   2   
+0010                STKTOP:   RMB   2   
+0012                CURSOR:   RMB   2   
+0014                SAVESP:   RMB   2   
+0016                LINENB:   RMB   2   
+0018                SCRTCH:   RMB   2   
+001A                CHAR:     RMB   2   
+001C                ZONE:     RMB   1   
+001D                MODE:     RMB   1   
+001E                RESRVD:   RMB   1   
+001F                LOEND:    EQU   $   
+001F                             ;*
+E423                          .CSEG      
+E423                             ;	ORG     ROMADR
+E423                          ALIGN   256   
+E500                          .ENT   $   
+E500   7E E5 15     BASIC:    JMP   SETUP   
+E503   4D 4F 44 39 42 41 53 49 43 00 .CSTR   "MOD9BASIC"   
+E50D   10 DE 10     WARMS:    LDS   STKTOP   
+E510   BD EC E5               JSR   INTEEE   
+E513   20 13                  BRA   WMS05   
+E515   10 CE 21 CC  SETUP:    LDS   #RAMEND-52   
+E519   10 DF 10     SET03:    STS   STKTOP   
+E51C   BD EC E5               JSR   INTEEE   
+E51F   CC 02 49     CLEAR:    LDD   #RAMBEG   
+E522   DD 0A                  STD   USRBAS   
+E524   DD 0C                  STD   USRTOP   
+E526   DD 0E        CLR02:    STD   STKLIM   
+E528   BD E6 3F     WMS05:    JSR   CRLF   
+E52B   8E E5 83               LDX   #VSTR   
+E52E   BD E6 38               JSR   PUTSTR   
+E531   10 DE 10     CMDB:     LDS   STKTOP   
+E534   0F 1D                  CLR   MODE   
+E536   BD E6 3F               JSR   CRLF   
+E539   9E 0A                  LDX   USRBAS   
+E53B   9F 12                  STX   CURSOR   
+E53D   8E 00 00     CMDE:     LDX   #0000   
+E540   9F 16                  STX   LINENB   
+E542   0D 1D                  TST   MODE   
+E544   26 05                  BNE   CMD01   
+E546   86 3A                  LDA   #":"   
+E548   BD EC AA               JSR   PUTCHR   
+E54B   BD E6 90     CMD01:    JSR   GETLIN   
+E54E   BD E7 EA               JSR   TSTNBR   
+E551   24 0E                  BCC   CMD02   
+E553   29 2B                  BVS   CMD05   
+E555   BD E7 5B               JSR   SKIPSP   
+E558   81 04                  CMPA   #EOL   
+E55A   27 E1                  BEQ   CMDE   
+E55C   BD E7 0D               JSR   MSLINE   
+E55F   20 D0                  BRA   CMDB   
+E561   34 10        CMD02:    PSHS   X   
+E563   9E 0C                  LDX   USRTOP   
+E565   9C 0E                  CMPX   STKLIM   
+E567   35 10                  PULS   X   
+E569   27 03                  BEQ   CMD03   
+E56B   7E E6 5F               JMP   ERRORR   
+E56E   C3 00 00     CMD03:    ADDD   #0   
+E571   27 0D                  BEQ   CMD05   
+E573   34 06        CMD04:    PSHS   D   
+E575   83 27 0F               SUBD   #9999   
+E578   35 06                  PULS   D   
+E57A   22 04                  BHI   CMD05   
+E57C   8D 10                  BSR   EDITOR   
+E57E   20 BD                  BRA   CMDE   
+E580   7E E6 56     CMD05:    JMP   ERRORS   
+E583   54 49 4E 59 20 56 31 2E 33 37 VSTR:   DB   "TINY V1.37"   
+E58D   04                     FCB   EOL   
+E58E                             ;******************************
+E58E                             ;******************************
+E58E   34 06        EDITOR:   PSHS   D   
+E590   BD E7 5B               JSR   SKIPSP   
+E593   9F 18                  STX   SCRTCH   
+E595   A6 60                  LDA   0,S   
+E597   9E 12                  LDX   CURSOR   
+E599   9C 0C                  CMPX   USRTOP   
+E59B   27 05                  BEQ   ED00   
+E59D   10 A3 00               CMPD   0,X   
+E5A0   24 02                  BCC   ED01   
+E5A2   9E 0A        ED00:     LDX   USRBAS   
+E5A4   BD E8 C4     ED01:     JSR   FNDLIN   
+E5A7   9F 12                  STX   CURSOR   
+E5A9   25 22                  BCS   ED04   
+E5AB   9F 14                  STX   SAVESP   
+E5AD   30 02                  LEAX   2,X   
+E5AF   A6 80        ED02:     LDA   ,X+   
+E5B1   81 04                  CMPA   #EOL   
+E5B3   26 FA                  BNE   ED02   
+E5B5   9C 0C        ED03:     CMPX   USRTOP   
+E5B7   27 0E                  BEQ   ED35   
+E5B9   A6 80                  LDA   ,X+   
+E5BB   9F 1A                  STX   CHAR   
+E5BD   9E 14                  LDX   SAVESP   
+E5BF   A7 80                  STA   ,X+   
+E5C1   9F 14                  STX   SAVESP   
+E5C3   9E 1A                  LDX   CHAR   
+E5C5   20 EE                  BRA   ED03   
+E5C7   9E 14        ED35:     LDX   SAVESP   
+E5C9   9F 0C                  STX   USRTOP   
+E5CB   9F 0E                  STX   STKLIM   
+E5CD   9E 18        ED04:     LDX   SCRTCH   
+E5CF   C6 FF                  LDB   #-1   
+E5D1   5C           ED05:     INCB      
+E5D2   A6 80                  LDA   ,X+   
+E5D4   81 04                  CMPA   #EOL   
+E5D6   26 F9                  BNE   ED05   
+E5D8   5D                     TSTB      
+E5D9   26 03                  BNE   ED55   
+E5DB   32 62                  LEAS   2,S   
+E5DD   39                     RTS      
+E5DE   30 1F        ED55:     LEAX   -1,X   
+E5E0   CB 04                  ADDB   #4   
+E5E2   30 1F        ED06:     LEAX   -1,X   
+E5E4   5A                     DECB      
+E5E5   A6 00                  LDA   0,X   
+E5E7   81 20                  CMPA   #SPACE   
+E5E9   27 F7                  BEQ   ED06   
+E5EB   86 04                  LDA   #EOL   
+E5ED   A7 01                  STA   1,X   
+E5EF   4F                     CLRA      
+E5F0   9E 0C                  LDX   USRTOP   
+E5F2   9F 1A                  STX   CHAR   
+E5F4   D3 0C                  ADDD   USRTOP   
+E5F6   DD 0C                  STD   USRTOP   
+E5F8   DD 0E                  STD   STKLIM   
+E5FA   BD E8 62               JSR   TSTSTK   
+E5FD   24 07                  BCC   ED07   
+E5FF   9F 0C                  STX   USRTOP   
+E601   9F 0E                  STX   STKLIM   
+E603   7E E6 4E               JMP   ERRORF   
+E606   9E 0C        ED07:     LDX   USRTOP   
+E608   9F 14        ED08:     STX   SAVESP   
+E60A   9E 1A                  LDX   CHAR   
+E60C   9C 12                  CMPX   CURSOR   
+E60E   27 0A                  BEQ   ED09   
+E610   A6 82                  LDA   ,-X   
+E612   9F 1A                  STX   CHAR   
+E614   9E 14                  LDX   SAVESP   
+E616   A7 82                  STA   ,-X   
+E618   20 EE                  BRA   ED08   
+E61A   35 06        ED09:     PULS   D   
+E61C   9E 12                  LDX   CURSOR   
+E61E   ED 81                  STD   ,X++   
+E620   9F 1A                  STX   CHAR   
+E622   9E 18        ED10:     LDX   SCRTCH   
+E624   A6 80                  LDA   ,X+   
+E626   9F 18                  STX   SCRTCH   
+E628   9E 1A                  LDX   CHAR   
+E62A   A7 80                  STA   ,X+   
+E62C   9F 1A                  STX   CHAR   
+E62E   81 04                  CMPA   #EOL   
+E630   26 F0                  BNE   ED10   
+E632   39                     RTS      
+E633                             ;******************************
+E633                             ;******************************
+E633   BD EC AA     PUTS01:   JSR   PUTCHR   
+E636   30 01                  LEAX   1,X   
+E638   A6 00        PUTSTR:   LDA   0,X   
+E63A   81 04                  CMPA   #EOL   
+E63C   26 F5                  BNE   PUTS01   
+E63E   39                     RTS      
+E63F                             ;******************************
+E63F                             ;******************************
+E63F   8E E6 47     CRLF:     LDX   #CRLFST   
+E642   8D F4                  BSR   PUTSTR   
+E644   0F 1C                  CLR   ZONE   
+E646   39                     RTS      
+E647   0D 0A 7F 00 00 00 04 CRLFST:   FCB   CR,LF,DEL,FILL,FILL,FILL,EOL   
+E64E                             ;******************************
+E64E                             ;******************************
+E64E   8D 24        ERRORF:   BSR   ER01   
+E650   53 4F 52 52 59         DB   "SORRY"   
+E655   04                     FCB   EOL   
+E656   8D 1C        ERRORS:   BSR   ER01   
+E658   57 48 41 54 20 3F      DB   "WHAT ?"   
+E65E   04                     FCB   EOL   
+E65F   8D 13        ERRORR:   BSR   ER01   
+E661   48 4F 57 20 3F         DB   "HOW ?"   
+E666   04                     FCB   EOL   
+E667   8D 0B        BREAK:    BSR   ER01   
+E669   42 52 45 41 4B         DB   "BREAK"   
+E66E   04                     FCB   EOL   
+E66F                          END   BSR	ER01   
+E66F   53 54 4F 50            DB   "STOP"   
+E673   04                     FCB   EOL   
+E674   8D C9        ER01:     BSR   CRLF   
+E676   86 07                  LDA   #BELL   
+E678   BD EC AA               JSR   PUTCHR   
+E67B   DC 16                  LDD   LINENB   
+E67D   BD EB 5E               JSR   PRNT4   
+E680   86 20                  LDA   #SPACE   
+E682   BD EC AA               JSR   PUTCHR   
+E685   35 10                  PULS   X   
+E687   8D AF                  BSR   PUTSTR   
+E689   8D B4                  BSR   CRLF   
+E68B   7E E5 31               JMP   CMDB   
+E68E                             ;******************************
+E68E                             ;******************************
+E68E   8D AF        GL00:     BSR   CRLF   
+E690   8E 02 00     GETLIN:   LDX   #BUFFER   
+E693   BD EC A0     GL03:     JSR   GETCHR   
+E696   81 20                  CMPA   #SPACE   
+E698   25 14                  BCS   GL05   
+E69A   81 7F                  CMPA   #$7F   
+E69C   27 F5                  BEQ   GL03   
+E69E   8C 02 48               CMPX   #BUFFER+BSIZE-1   
+E6A1   26 04                  BNE   GL04   
+E6A3   86 07                  LDA   #BELL   
+E6A5   20 02                  BRA   GL02   
+E6A7   A7 80        GL04:     STA   ,X+   
+E6A9   BD EC AA     GL02:     JSR   PUTCHR   
+E6AC   20 E5                  BRA   GL03   
+E6AE   81 08        GL05:     CMPA   #BS   
+E6B0   27 24                  BEQ   GL07   
+E6B2   81 18                  CMPA   #CAN   
+E6B4   27 D8                  BEQ   GL00   
+E6B6   81 0A                  CMPA   #LF   
+E6B8   27 31                  BEQ   GL09   
+E6BA   81 0D                  CMPA   #CR   
+E6BC   26 D5                  BNE   GL03   
+E6BE   0D 1D                  TST   MODE   
+E6C0   27 05                  BEQ   GL06   
+E6C2   BD EC AA               JSR   PUTCHR   
+E6C5   20 07                  BRA   GL08   
+E6C7   34 10        GL06:     PSHS   X   
+E6C9   BD E6 3F               JSR   CRLF   
+E6CC   35 10                  PULS   X   
+E6CE   86 04        GL08:     LDA   #EOL   
+E6D0   A7 00                  STA   0,X   
+E6D2   8E 02 00               LDX   #BUFFER   
+E6D5   39                     RTS      
+E6D6   8C 02 00     GL07:     CMPX   #BUFFER   
+E6D9   27 B8                  BEQ   GL03   
+E6DB   30 1F                  LEAX   -1,X   
+E6DD   86 08                  LDA   #BS   
+E6DF   BD EC AA               JSR   PUTCHR   
+E6E2   86 20                  LDA   #SPACE   
+E6E4   BD EC AA               JSR   PUTCHR   
+E6E7   86 08                  LDA   #BS   
+E6E9   20 BE                  BRA   GL02   
+E6EB   1A 01        GL09:     ORCC   #$01   
+E6ED   06 1D                  ROR   MODE   
+E6EF   20 B8                  BRA   GL02   
+E6F1                             ;******************************
+E6F1                             ;******************************
+E6F1   30 01        REM00:    LEAX   1,X   
+E6F3   8D 66        REM:      BSR   SKIPSP   
+E6F5   81 04                  CMPA   #EOL   
+E6F7   26 F8                  BNE   REM00   
+E6F9   BD EA 31     ENDSMT:   JSR   TSTEOL   
+E6FC   96 16        ENDS02:   LDA   LINENB   
+E6FE   9A 17                  ORA   LINENB+1   
+E700   27 14                  BEQ   REM09   
+E702   9C 0C        REM05:    CMPX   USRTOP   
+E704   26 03                  BNE   NXTLIN   
+E706   7E E6 5F               JMP   ERRORR   
+E709   EC 81        NXTLIN:   LDD   ,X++   
+E70B   DD 16                  STD   LINENB   
+E70D   BD EC 9C     MSLINE:   JSR   TSTBRK   
+E710   8D 08                  BSR   IFAN   
+E712   25 03                  BCS   IMPLET   
+E714   34 06                  PSHS   D   
+E716   39           REM09:    RTS      
+E717   7E EA 42     IMPLET:   JMP   LET   
+E71A                             ;******************************
+E71A                             ;******************************
+E71A   8D 3F        IFAN:     BSR   SKIPSP   
+E71C   9F 12                  STX   CURSOR   
+E71E   8E EC 37               LDX   #VERBT   
+E721   A6 80        FAN00:    LDA   ,X+   
+E723   81 04                  CMPA   #EOL   
+E725   26 05                  BNE   FAN04   
+E727   9E 12                  LDX   CURSOR   
+E729   1A 01                  ORCC   #$01   
+E72B   39                     RTS      
+E72C   9F 1A        FAN04:    STX   CHAR   
+E72E   9E 12                  LDX   CURSOR   
+E730   9F 18                  STX   SCRTCH   
+E732   9E 18        FAN05:    LDX   SCRTCH   
+E734   A1 00                  CMPA   0,X   
+E736   26 15                  BNE   FAN07   
+E738   30 01                  LEAX   1,X   
+E73A   9F 18                  STX   SCRTCH   
+E73C   9E 1A                  LDX   CHAR   
+E73E   A6 80                  LDA   ,X+   
+E740   9F 1A                  STX   CHAR   
+E742   81 04                  CMPA   #EOL   
+E744   26 EC                  BNE   FAN05   
+E746   EC 00                  LDD   0,X   
+E748   9E 18                  LDX   SCRTCH   
+E74A   1C FE                  ANDCC   #$FE   
+E74C   39                     RTS      
+E74D   9E 1A        FAN07:    LDX   CHAR   
+E74F   A6 80        FAN08:    LDA   ,X+   
+E751   81 04                  CMPA   #EOL   
+E753   26 FA                  BNE   FAN08   
+E755   30 02                  LEAX   2,X   
+E757   20 C8                  BRA   FAN00   
+E759                             ;******************************
+E759                             ;******************************
+E759   30 01        NXTNSP:   LEAX   1,X   
+E75B   A6 00        SKIPSP:   LDA   0,X   
+E75D   81 20                  CMPA   #SPACE   
+E75F   27 F8                  BEQ   NXTNSP   
+E761   39                     RTS      
+E762                             ;******************************
+E762                             ;******************************
+E762   8D 1A        TSTHEX:   BSR   TSTDIG   
+E764   24 22                  BCC   TST05   
+E766   81 41                  CMPA   #"A"   
+E768   25 11                  BCS   TST03   
+E76A   81 46                  CMPA   #"F"   
+E76C   22 0D                  BHI   TST03   
+E76E   80 37                  SUBA   #"A"-10   
+E770   1C FE                  ANDCC   #$FE   
+E772   39                     RTS      
+E773                             ;******************************
+E773                             ;******************************
+E773   81 41        TSTLTR:   CMPA   #"A"   
+E775   25 04                  BCS   TST03   
+E777   81 5A                  CMPA   #"Z"   
+E779   23 0D                  BLS   TST05   
+E77B   1A 01        TST03:    ORCC   #$01   
+E77D   39                     RTS      
+E77E                             ;******************************
+E77E                             ;******************************
+E77E   81 30        TSTDIG:   CMPA   #"0"   
+E780   25 F9                  BCS   TST03   
+E782   81 39                  CMPA   #"9"   
+E784   22 F5                  BHI   TST03   
+E786   80 30                  SUBA   #"0"   
+E788   1C FE        TST05:    ANDCC   #$FE   
+E78A   39                     RTS      
+E78B                             ;******************************
+E78B                             ;******************************
+E78B   8D CE        TSTVAR:   BSR   SKIPSP   
+E78D   8D E4                  BSR   TSTLTR   
+E78F   25 12                  BCS   TSTV03   
+E791   1F 89                  TFR   A,B   
+E793   A6 01                  LDA   1,X   
+E795   8D DC                  BSR   TSTLTR   
+E797   24 E2                  BCC   TST03   
+E799   30 01                  LEAX   1,X   
+E79B   C0 41                  SUBB   #"A"   
+E79D   58                     ASLB      
+E79E   4F                     CLRA      
+E79F   D3 10                  ADDD   STKTOP   
+E7A1   1C FE        TSTV02:   ANDCC   #$FE   
+E7A3   39           TSTV03:   RTS      
+E7A4                             ;******************************
+E7A4                             ;******************************
+E7A4   BD EA 10     USER:     JSR   ARGONE   
+E7A7   34 06                  PSHS   D   
+E7A9   BD E7 5B               JSR   SKIPSP   
+E7AC   81 2C                  CMPA   #","   
+E7AE   27 09                  BEQ   USER03   
+E7B0   81 29                  CMPA   #")"   
+E7B2   1A 01                  ORCC   #$01   
+E7B4   27 15                  BEQ   USER05   
+E7B6   7E E6 56     USER02:   JMP   ERRORS   
+E7B9   30 01        USER03:   LEAX   1,X   
+E7BB   BD E9 43               JSR   EXPR   
+E7BE   34 02                  PSHS   A   
+E7C0   BD E7 5B               JSR   SKIPSP   
+E7C3   81 29                  CMPA   #")"   
+E7C5   35 02                  PULS   A   
+E7C7   26 ED                  BNE   USER02   
+E7C9   1C FE                  ANDCC   #$FE   
+E7CB   30 01        USER05:   LEAX   1,X   
+E7CD   9F 12                  STX   CURSOR   
+E7CF   AD F1                  JSR   [,S++]   
+E7D1   9E 12                  LDX   CURSOR   
+E7D3   1C FE                  ANDCC   #$FE   
+E7D5   39                     RTS      
+E7D6                             ;******************************
+E7D6                             ;******************************
+E7D6   BD E7 5B     TSTSNB:   JSR   SKIPSP   
+E7D9   81 2D                  CMPA   #"-"   
+E7DB   26 0D                  BNE   TSTNBR   
+E7DD   30 01                  LEAX   1,X   
+E7DF   8D 09                  BSR   TSTNBR   
+E7E1   25 06                  BCS   TSN02   
+E7E3   40                     NEGA      
+E7E4   50                     NEGB      
+E7E5   82 00                  SBCA   #0   
+E7E7   1C FC                  ANDCC   #$FC   
+E7E9   39           TSN02:    RTS      
+E7EA                             ;******************************
+E7EA                             ;******************************
+E7EA   BD E7 5B     TSTNBR:   JSR   SKIPSP   
+E7ED   BD E7 7E               JSR   TSTDIG   
+E7F0   24 2F                  BCC   TSTN02   
+E7F2   81 24                  CMPA   #"$"   
+E7F4   1A 01                  ORCC   #$01   
+E7F6   26 60                  BNE   TSTN09   
+E7F8   30 01        TSTN20:   LEAX   1,X   
+E7FA   6F E2                  CLR   ,-S   
+E7FC   6F E2                  CLR   ,-S   
+E7FE   A6 00        TSTN23:   LDA   0,X   
+E800   BD E7 62               JSR   TSTHEX   
+E803   25 4F                  BCS   TSTN07   
+E805   30 01                  LEAX   1,X   
+E807   34 10                  PSHS   X   
+E809   34 02                  PSHS   A   
+E80B   EC 63                  LDD   3,S   
+E80D   85 F0                  BITA   #$F0   
+E80F   26 4A                  BNE   TSTN11   
+E811   58                     ASLB      
+E812   49                     ROLA      
+E813   58                     ASLB      
+E814   49                     ROLA      
+E815   58                     ASLB      
+E816   49                     ROLA      
+E817   58                     ASLB      
+E818   49                     ROLA      
+E819   EB E0                  ADDB   ,S+   
+E81B   ED 62                  STD   2,S   
+E81D   35 10                  PULS   X   
+E81F   20 DD                  BRA   TSTN23   
+E821   30 01        TSTN02:   LEAX   1,X   
+E823   34 02                  PSHS   A   
+E825   6F E2                  CLR   ,-S   
+E827   A6 00        TSTN03:   LDA   0,X   
+E829   BD E7 7E               JSR   TSTDIG   
+E82C   25 26                  BCS   TSTN07   
+E82E   30 01                  LEAX   1,X   
+E830   34 10                  PSHS   X   
+E832   34 02                  PSHS   A   
+E834   EC 63                  LDD   3,S   
+E836   58                     ASLB      
+E837   49                     ROLA      
+E838   29 21                  BVS   TSTN11   
+E83A   58                     ASLB      
+E83B   49                     ROLA      
+E83C   29 1D                  BVS   TSTN11   
+E83E   E3 63                  ADDD   3,S   
+E840   29 19                  BVS   TSTN11   
+E842   58                     ASLB      
+E843   49                     ROLA      
+E844   29 15                  BVS   TSTN11   
+E846   EB 60                  ADDB   0,S   
+E848   89 00                  ADCA   #0   
+E84A   29 0F                  BVS   TSTN11   
+E84C   ED 63                  STD   3,S   
+E84E   32 61                  LEAS   1,S   
+E850   35 10                  PULS   X   
+E852   20 D3                  BRA   TSTN03   
+E854   35 06        TSTN07:   PULS   D   
+E856   1C FE                  ANDCC   #$FE   
+E858   1C FD        TSTN09:   ANDCC   #$FD   
+E85A   39                     RTS      
+E85B   AE 61        TSTN11:   LDX   1,S   
+E85D   32 65                  LEAS   5,S   
+E85F   1A 03                  ORCC   #$03   
+E861   39                     RTS      
+E862                             ;******************************
+E862                             ;******************************
+E862   10 DF 14     TSTSTK:   STS   SAVESP   
+E865   DC 14                  LDD   SAVESP   
+E867   83 00 30               SUBD   #STKCUS   
+E86A   93 0E                  SUBD   STKLIM   
+E86C   39                     RTS      
+E86D                             ;******************************
+E86D                             ;******************************
+E86D   BD E9 FD     PEEK:     JSR   PAREXP   
+E870   34 06                  PSHS   D   
+E872   34 10                  PSHS   X   
+E874   E6 72                  LDB   [2,S]   
+E876   35 10                  PULS   X   
+E878   32 62                  LEAS   2,S   
+E87A   4F                     CLRA      
+E87B   39                     RTS      
+E87C                             ;******************************
+E87C                             ;******************************
+E87C   BD E9 FD     POKE:     JSR   PAREXP   
+E87F   34 06                  PSHS   D   
+E881   BD E7 5B               JSR   SKIPSP   
+E884   81 3D                  CMPA   #"="   
+E886   27 03                  BEQ   POKE05   
+E888   7E E6 56               JMP   ERRORS   
+E88B   30 01        POKE05:   LEAX   1,X   
+E88D   BD E9 43               JSR   EXPR   
+E890   BD EA 31               JSR   TSTEOL   
+E893   34 10                  PSHS   X   
+E895   E7 72                  STB   [2,S]   
+E897   35 10                  PULS   X   
+E899   32 62                  LEAS   2,S   
+E89B   7E E6 FC               JMP   ENDS02   
+E89E                             ;******************************
+E89E                             ;******************************
+E89E   BD E7 5B     TSTFUN:   JSR   SKIPSP   
+E8A1   9F 12                  STX   CURSOR   
+E8A3   8E E8 AE               LDX   #FUNT   
+E8A6   BD E7 21               JSR   FAN00   
+E8A9   25 02                  BCS   TSTF05   
+E8AB   34 06                  PSHS   D   
+E8AD   39           TSTF05:   RTS      
+E8AE                             ;******************************
+E8AE                             ;******************************
+E8AE   55 53 52     FUNT:     DB   "USR"   
+E8B1   04                     FCB   EOL   
+E8B2   E7 A4                  FDB   USER   
+E8B4   50 45 45 4B            DB   "PEEK"   
+E8B8   04                     FCB   EOL   
+E8B9   E8 6D                  FDB   PEEK   
+E8BB   4D 45 4D               DB   "MEM"   
+E8BE   04                     FCB   EOL   
+E8BF   E8 62                  FDB   TSTSTK   
+E8C1   04                     FCB   EOL   
+E8C2                             ;******************************
+E8C2                             ;******************************
+E8C2   9E 0A        FLINE:    LDX   USRBAS   
+E8C4   9C 0C        FNDLIN:   CMPX   USRTOP   
+E8C6   26 03                  BNE   FND03   
+E8C8   1A 03                  ORCC   #$03   
+E8CA   39                     RTS      
+E8CB   10 A3 00     FND03:    CMPD   0,X   
+E8CE   26 03                  BNE   FND05   
+E8D0   1C FC                  ANDCC   #$FC   
+E8D2   39                     RTS      
+E8D3   24 05        FND05:    BCC   FND07   
+E8D5   1A 01                  ORCC   #$01   
+E8D7   1C FD                  ANDCC   #$FD   
+E8D9   39                     RTS      
+E8DA   34 02        FND07:    PSHS   A   
+E8DC   86 04                  LDA   #EOL   
+E8DE   30 01                  LEAX   1,X   
+E8E0   30 01        FND09:    LEAX   1,X   
+E8E2   A1 00                  CMPA   0,X   
+E8E4   26 FA                  BNE   FND09   
+E8E6   35 02                  PULS   A   
+E8E8   30 01                  LEAX   1,X   
+E8EA   20 D8                  BRA   FNDLIN   
+E8EC                             ;******************************
+E8EC                             ;******************************
+E8EC   8D 55        RELEXP:   BSR   EXPR   
+E8EE   34 06                  PSHS   D   
+E8F0   5F                     CLRB      
+E8F1   BD E7 5B               JSR   SKIPSP   
+E8F4   81 3D                  CMPA   #"="   
+E8F6   27 23                  BEQ   REL06   
+E8F8   81 3C                  CMPA   #"<"   
+E8FA   26 10                  BNE   REL03   
+E8FC   30 01                  LEAX   1,X   
+E8FE   5C                     INCB      
+E8FF   BD E7 5B               JSR   SKIPSP   
+E902   81 3E                  CMPA   #">"   
+E904   26 11                  BNE   REL05   
+E906   30 01                  LEAX   1,X   
+E908   CB 04                  ADDB   #4   
+E90A   20 13                  BRA   REL07   
+E90C   81 3E        REL03:    CMPA   #">"   
+E90E   26 5F                  BNE   EXPR06   
+E910   30 01                  LEAX   1,X   
+E912   CB 04                  ADDB   #4   
+E914   BD E7 5B               JSR   SKIPSP   
+E917   81 3D        REL05:    CMPA   #"="   
+E919   26 04                  BNE   REL07   
+E91B   30 01        REL06:    LEAX   1,X   
+E91D   CB 02                  ADDB   #2   
+E91F   34 04        REL07:    PSHS   B   
+E921   8D 20                  BSR   EXPR   
+E923   34 10                  PSHS   X   
+E925   A3 63                  SUBD   3,S   
+E927   1F A8                  TFR   CC,A   
+E929   44                     LSRA      
+E92A   1F 89                  TFR   A,B   
+E92C   48                     ASLA      
+E92D   48                     ASLA      
+E92E   34 04                  PSHS   B   
+E930   AB E0                  ADDA   ,S+   
+E932   84 06                  ANDA   #$06   
+E934   26 01                  BNE   REL08   
+E936   4C                     INCA      
+E937   5F           REL08:    CLRB      
+E938   A4 62                  ANDA   2,S   
+E93A   27 01                  BEQ   REL09   
+E93C   53                     COMB      
+E93D   4F           REL09:    CLRA      
+E93E   35 10                  PULS   X   
+E940   32 63                  LEAS   3,S   
+E942   39                     RTS      
+E943                             ;******************************
+E943                             ;******************************
+E943   6F E2        EXPR:     CLR   ,-S   
+E945   6F E2                  CLR   ,-S   
+E947   BD E7 5B               JSR   SKIPSP   
+E94A   81 2D                  CMPA   #"-"   
+E94C   27 17                  BEQ   EXPR05   
+E94E   81 2B                  CMPA   #"+"   
+E950   26 02                  BNE   EXPR03   
+E952   30 01        EXPR02:   LEAX   1,X   
+E954   8D 1C        EXPR03:   BSR   TERM   
+E956   E3 60        EXPR04:   ADDD   0,S   
+E958   ED 60                  STD   0,S   
+E95A   BD E7 5B               JSR   SKIPSP   
+E95D   81 2B                  CMPA   #"+"   
+E95F   27 F1                  BEQ   EXPR02   
+E961   81 2D                  CMPA   #"-"   
+E963   26 0A                  BNE   EXPR06   
+E965   30 01        EXPR05:   LEAX   1,X   
+E967   8D 09                  BSR   TERM   
+E969   40                     NEGA      
+E96A   50                     NEGB      
+E96B   82 00                  SBCA   #0   
+E96D   20 E7                  BRA   EXPR04   
+E96F   35 06        EXPR06:   PULS   D   
+E971   39                     RTS      
+E972                             ;******************************
+E972                             ;******************************
+E972   BD E9 E5     TERM:     JSR   FACT   
+E975   34 06                  PSHS   D   
+E977   BD E7 5B     TERM03:   JSR   SKIPSP   
+E97A   81 2A                  CMPA   #"*"   
+E97C   27 48                  BEQ   TERM07   
+E97E   81 2F                  CMPA   #"/"   
+E980   27 03                  BEQ   TERM05   
+E982   35 06                  PULS   D   
+E984   39                     RTS      
+E985   30 01        TERM05:   LEAX   1,X   
+E987   8D 5C                  BSR   FACT   
+E989   34 10                  PSHS   X   
+E98B   30 62                  LEAX   2,S   
+E98D   34 06                  PSHS   D   
+E98F   A8 00                  EORA   0,X   
+E991   BD EA 24               JSR   ABSX   
+E994   30 60                  LEAX   0,S   
+E996   BD EA 24               JSR   ABSX   
+E999   34 02                  PSHS   A   
+E99B   86 11                  LDA   #17   
+E99D   34 02                  PSHS   A   
+E99F   4F                     CLRA      
+E9A0   5F                     CLRB      
+E9A1   A3 62        DIV05:    SUBD   2,S   
+E9A3   24 06                  BCC   DIV07   
+E9A5   E3 62                  ADDD   2,S   
+E9A7   1C FE                  ANDCC   #$FE   
+E9A9   20 02                  BRA   DIV09   
+E9AB   1A 01        DIV07:    ORCC   #$01   
+E9AD   69 67        DIV09:    ROL   7,S   
+E9AF   69 66                  ROL   6,S   
+E9B1   59                     ROLB      
+E9B2   49                     ROLA      
+E9B3   6A 60                  DEC   0,S   
+E9B5   26 EA                  BNE   DIV05   
+E9B7   A6 61                  LDA   1,S   
+E9B9   32 64                  LEAS   4,S   
+E9BB   4D                     TSTA      
+E9BC   2A 04                  BPL   TERM06   
+E9BE   30 62                  LEAX   2,S   
+E9C0   8D 66                  BSR   NEGX   
+E9C2   35 10        TERM06:   PULS   X   
+E9C4   20 B1                  BRA   TERM03   
+E9C6   30 01        TERM07:   LEAX   1,X   
+E9C8   8D 1B                  BSR   FACT   
+E9CA   34 04        MULT:     PSHS   B   
+E9CC   E6 62                  LDB   2,S   
+E9CE   3D                     MUL      
+E9CF   A6 61                  LDA   1,S   
+E9D1   E7 61                  STB   1,S   
+E9D3   E6 60                  LDB   0,S   
+E9D5   3D                     MUL      
+E9D6   A6 62                  LDA   2,S   
+E9D8   E7 62                  STB   2,S   
+E9DA   35 04                  PULS   B   
+E9DC   3D                     MUL      
+E9DD   AB 60                  ADDA   0,S   
+E9DF   AB 61                  ADDA   1,S   
+E9E1   ED 60                  STD   0,S   
+E9E3   20 92                  BRA   TERM03   
+E9E5                             ;******************************
+E9E5                             ;******************************
+E9E5   BD E7 8B     FACT:     JSR   TSTVAR   
+E9E8   25 09                  BCS   FACT03   
+E9EA   34 10                  PSHS   X   
+E9EC   1F 01                  TFR   D,X   
+E9EE   EC 00                  LDD   0,X   
+E9F0   35 10                  PULS   X   
+E9F2   39           FACT02:   RTS      
+E9F3   BD E7 EA     FACT03:   JSR   TSTNBR   
+E9F6   24 FA                  BCC   FACT02   
+E9F8   BD E8 9E               JSR   TSTFUN   
+E9FB   24 F5                  BCC   FACT02   
+E9FD   8D 11        PAREXP:   BSR   ARGONE   
+E9FF   34 02                  PSHS   A   
+EA01   BD E7 5B               JSR   SKIPSP   
+EA04   81 29                  CMPA   #")"   
+EA06   35 02                  PULS   A   
+EA08   26 03                  BNE   FACT05   
+EA0A   30 01                  LEAX   1,X   
+EA0C   39                     RTS      
+EA0D   7E E6 56     FACT05:   JMP   ERRORS   
+EA10                             ;******************************
+EA10                             ;******************************
+EA10   BD E8 62     ARGONE:   JSR   TSTSTK   
+EA13   24 03                  BCC   FACT04   
+EA15   7E E6 4E               JMP   ERRORF   
+EA18   BD E7 5B     FACT04:   JSR   SKIPSP   
+EA1B   81 28                  CMPA   #"("   
+EA1D   26 EE                  BNE   FACT05   
+EA1F   30 01                  LEAX   1,X   
+EA21   7E E9 43               JMP   EXPR   
+EA24                             ;******************************
+EA24                             ;******************************
+EA24   6D 00        ABSX:     TST   0,X   
+EA26   2A 08                  BPL   NEG05   
+EA28   60 00        NEGX:     NEG   0,X   
+EA2A   60 01                  NEG   1,X   
+EA2C   24 02                  BCC   NEG05   
+EA2E   6A 00                  DEC   0,X   
+EA30   39           NEG05:    RTS      
+EA31                             ;******************************
+EA31                             ;******************************
+EA31   34 02        TSTEOL:   PSHS   A   
+EA33   BD E7 5B               JSR   SKIPSP   
+EA36   81 04                  CMPA   #EOL   
+EA38   27 03                  BEQ   TEOL03   
+EA3A   7E E6 56               JMP   ERRORS   
+EA3D   30 01        TEOL03:   LEAX   1,X   
+EA3F   35 02                  PULS   A   
+EA41   39                     RTS      
+EA42                             ;******************************
+EA42                             ;******************************
+EA42   BD E7 8B     LET:      JSR   TSTVAR   
+EA45   24 03                  BCC   LET03   
+EA47   7E E6 56               JMP   ERRORS   
+EA4A   34 06        LET03:    PSHS   D   
+EA4C   BD E7 5B               JSR   SKIPSP   
+EA4F   81 3D                  CMPA   #"="   
+EA51   27 03                  BEQ   LET05   
+EA53   7E E6 56               JMP   ERRORS   
+EA56   30 01        LET05:    LEAX   1,X   
+EA58   BD E9 43               JSR   EXPR   
+EA5B   8D D4                  BSR   TSTEOL   
+EA5D   9F 12                  STX   CURSOR   
+EA5F   35 10                  PULS   X   
+EA61   ED 00                  STD   0,X   
+EA63   9E 12                  LDX   CURSOR   
+EA65   7E E6 FC               JMP   ENDS02   
+EA68                             ;******************************
+EA68                             ;******************************
+EA68   BD E8 EC     IF:       JSR   RELEXP   
+EA6B   5D                     TSTB      
+EA6C   27 03                  BEQ   IF03   
+EA6E   7E E7 0D               JMP   MSLINE   
+EA71   7E E6 F3     IF03:     JMP   REM   
+EA74                             ;******************************
+EA74                             ;******************************
+EA74   BD E9 43     GOTO:     JSR   EXPR   
+EA77   8D B8                  BSR   TSTEOL   
+EA79   BD E8 C2               JSR   FLINE   
+EA7C   25 0F                  BCS   GOSB04   
+EA7E   7E E7 09               JMP   NXTLIN   
+EA81                             ;******************************
+EA81                             ;******************************
+EA81   BD E9 43     GOSUB:    JSR   EXPR   
+EA84   8D AB                  BSR   TSTEOL   
+EA86   9F 12                  STX   CURSOR   
+EA88   BD E8 C2               JSR   FLINE   
+EA8B   24 03                  BCC   GOSB03   
+EA8D   7E E6 5F     GOSB04:   JMP   ERRORR   
+EA90   BD E8 62     GOSB03:   JSR   TSTSTK   
+EA93   24 03                  BCC   GOSB05   
+EA95   7E E6 4E               JMP   ERRORF   
+EA98   DC 12        GOSB05:   LDD   CURSOR   
+EA9A   34 06                  PSHS   D   
+EA9C   DC 16                  LDD   LINENB   
+EA9E   34 06                  PSHS   D   
+EAA0   BD E7 09               JSR   NXTLIN   
+EAA3   35 06                  PULS   D   
+EAA5   DD 16                  STD   LINENB   
+EAA7   35 10                  PULS   X   
+EAA9   7E E6 FC               JMP   ENDS02   
+EAAC                             ;******************************
+EAAC                             ;******************************
+EAAC                RETURN:   EQU   TSTEOL   
+EAAC                             ;******************************
+EAAC                             ;******************************
+EAAC   BD E7 5B     PRINT:    JSR   SKIPSP   
+EAAF   81 2C        PR01:     CMPA   #","   
+EAB1   27 36                  BEQ   PR05   
+EAB3   81 3B                  CMPA   #";"   
+EAB5   27 3D                  BEQ   PR07   
+EAB7   81 04                  CMPA   #EOL   
+EAB9   27 25                  BEQ   PR04   
+EABB   81 22                  CMPA   #$22   
+EABD   26 06                  BNE   PR02   
+EABF   30 01                  LEAX   1,X   
+EAC1   8D 42                  BSR   PRNTQS   
+EAC3   20 09                  BRA   PR03   
+EAC5   BD E9 43     PR02:     JSR   EXPR   
+EAC8   34 10                  PSHS   X   
+EACA   8D 47                  BSR   PRNTN   
+EACC   35 10                  PULS   X   
+EACE   BD E7 5B     PR03:     JSR   SKIPSP   
+EAD1   81 2C                  CMPA   #","   
+EAD3   27 14                  BEQ   PR05   
+EAD5   81 3B                  CMPA   #";"   
+EAD7   27 1B                  BEQ   PR07   
+EAD9   81 04                  CMPA   #EOL   
+EADB   27 03                  BEQ   PR04   
+EADD   7E E6 56               JMP   ERRORS   
+EAE0   34 10        PR04:     PSHS   X   
+EAE2   BD E6 3F               JSR   CRLF   
+EAE5   35 10                  PULS   X   
+EAE7   20 14                  BRA   PR08   
+EAE9   C6 07        PR05:     LDB   #$7   
+EAEB   86 20        PR06:     LDA   #SPACE   
+EAED   BD EC AA               JSR   PUTCHR   
+EAF0   D5 1C                  BITB   ZONE   
+EAF2   26 F7                  BNE   PR06   
+EAF4   30 01        PR07:     LEAX   1,X   
+EAF6   BD E7 5B               JSR   SKIPSP   
+EAF9   81 04                  CMPA   #EOL   
+EAFB   26 B2                  BNE   PR01   
+EAFD   30 01        PR08:     LEAX   1,X   
+EAFF   7E E6 FC               JMP   ENDS02   
+EB02                             ;*
+EB02                             ;*
+EB02   BD EC AA     PRQ01:    JSR   PUTCHR   
+EB05   A6 80        PRNTQS:   LDA   ,X+   
+EB07   81 04                  CMPA   #EOL   
+EB09   26 03                  BNE   PRQ03   
+EB0B   7E E6 56               JMP   ERRORS   
+EB0E   81 22        PRQ03:    CMPA   #$22   
+EB10   26 F0                  BNE   PRQ01   
+EB12   39                     RTS      
+EB13                             ;*
+EB13   4D           PRNTN:    TSTA      
+EB14   2A 0D                  BPL   PRN03   
+EB16   40                     NEGA      
+EB17   50                     NEGB      
+EB18   82 00                  SBCA   #0   
+EB1A   34 02                  PSHS   A   
+EB1C   86 2D                  LDA   #"-"   
+EB1E   BD EC AA               JSR   PUTCHR   
+EB21   35 02                  PULS   A   
+EB23   8E EB 52     PRN03:    LDX   #PRNPT-2   
+EB26   30 02        PRN05:    LEAX   2,X   
+EB28   10 A3 00               CMPD   0,X   
+EB2B   24 05                  BCC   PRN07   
+EB2D   8C EB 5C               CMPX   #PRNPTO   
+EB30   26 F4                  BNE   PRN05   
+EB32   0F 1A        PRN07:    CLR   CHAR   
+EB34   10 A3 00     PRN09:    CMPD   0,X   
+EB37   25 06                  BCS   PRN11   
+EB39   A3 00                  SUBD   0,X   
+EB3B   0C 1A                  INC   CHAR   
+EB3D   20 F5                  BRA   PRN09   
+EB3F   34 02        PRN11:    PSHS   A   
+EB41   86 30                  LDA   #"0"   
+EB43   9B 1A                  ADDA   CHAR   
+EB45   BD EC AA               JSR   PUTCHR   
+EB48   35 02                  PULS   A   
+EB4A   8C EB 5C               CMPX   #PRNPTO   
+EB4D   27 04                  BEQ   PRN13   
+EB4F   30 02                  LEAX   2,X   
+EB51   20 DF                  BRA   PRN07   
+EB53   39           PRN13:    RTS      
+EB54   27 10        PRNPT:    FDB   10000   
+EB56   03 E8                  FDB   1000   
+EB58   00 64                  FDB   100   
+EB5A   00 0A                  FDB   10   
+EB5C   00 01        PRNPTO:   FDB   1   
+EB5E                             ;*
+EB5E   8E EB 56     PRNT4:    LDX   #PRNPT+2   
+EB61   20 CF                  BRA   PRN07   
+EB63                             ;******************************
+EB63                             ;******************************
+EB63   BD E7 8B     INPUT:    JSR   TSTVAR   
+EB66   25 3C                  BCS   IN11   
+EB68   34 06                  PSHS   D   
+EB6A   9F 12                  STX   CURSOR   
+EB6C   86 3F        IN03:     LDA   #"?"   
+EB6E   BD EC AA               JSR   PUTCHR   
+EB71   BD E6 90               JSR   GETLIN   
+EB74   BD E7 5B     IN05:     JSR   SKIPSP   
+EB77   81 04                  CMPA   #EOL   
+EB79   27 F1                  BEQ   IN03   
+EB7B   BD E7 D6               JSR   TSTSNB   
+EB7E   24 0B                  BCC   IN07   
+EB80   8E EB B8               LDX   #RMESS   
+EB83   BD E6 38               JSR   PUTSTR   
+EB86   BD E6 3F               JSR   CRLF   
+EB89   20 E1                  BRA   IN03   
+EB8B   9F 18        IN07:     STX   SCRTCH   
+EB8D   35 10                  PULS   X   
+EB8F   ED 00                  STD   0,X   
+EB91   9E 12                  LDX   CURSOR   
+EB93   BD E7 5B               JSR   SKIPSP   
+EB96   81 2C                  CMPA   #","   
+EB98   27 03                  BEQ   IN09   
+EB9A   7E E6 F9               JMP   ENDSMT   
+EB9D   30 01        IN09:     LEAX   1,X   
+EB9F   BD E7 8B               JSR   TSTVAR   
+EBA2   24 03                  BCC   IN13   
+EBA4   7E E6 56     IN11:     JMP   ERRORS   
+EBA7   34 06        IN13:     PSHS   D   
+EBA9   34 10                  PSHS   X   
+EBAB   9E 18                  LDX   SCRTCH   
+EBAD   BD E7 5B               JSR   SKIPSP   
+EBB0   81 2C                  CMPA   #","   
+EBB2   26 C0                  BNE   IN05   
+EBB4   30 01                  LEAX   1,X   
+EBB6   20 BC                  BRA   IN05   
+EBB8   52 45 2D 45 4E 54 45 52 RMESS:   DB   "RE-ENTER"   
+EBC0   04                     FCB   EOL   
+EBC1                             ;******************************
+EBC1                             ;******************************
+EBC1   9E 10        RUN:      LDX   STKTOP   
+EBC3   86 34                  LDA   #52   
+EBC5   6F 80        RUN01:    CLR   ,X+   
+EBC7   4A                     DECA      
+EBC8   26 FB                  BNE   RUN01   
+EBCA   9E 0A                  LDX   USRBAS   
+EBCC   7E E7 02               JMP   REM05   
+EBCF                             ;******************************
+EBCF                             ;******************************
+EBCF   BD E7 EA     LIST:     JSR   TSTNBR   
+EBD2   24 08                  BCC   LIST03   
+EBD4   4F                     CLRA      
+EBD5   5F                     CLRB      
+EBD6   DD 12                  STD   CURSOR   
+EBD8   86 7F                  LDA   #$7F   
+EBDA   20 17                  BRA   LIST07   
+EBDC   DD 12        LIST03:   STD   CURSOR   
+EBDE   BD E7 5B               JSR   SKIPSP   
+EBE1   81 2C                  CMPA   #","   
+EBE3   27 04                  BEQ   LIST05   
+EBE5   96 12                  LDA   CURSOR   
+EBE7   20 0A                  BRA   LIST07   
+EBE9   30 01        LIST05:   LEAX   1,X   
+EBEB   BD E7 EA               JSR   TSTNBR   
+EBEE   24 03                  BCC   LIST07   
+EBF0   7E E6 56               JMP   ERRORS   
+EBF3   BD EA 31     LIST07:   JSR   TSTEOL   
+EBF6   34 06                  PSHS   D   
+EBF8   DC 12                  LDD   CURSOR   
+EBFA   9F 12                  STX   CURSOR   
+EBFC   BD E8 C2               JSR   FLINE   
+EBFF   9C 0C        LIST09:   CMPX   USRTOP   
+EC01   27 28                  BEQ   LIST10   
+EC03   35 06                  PULS   D   
+EC05   10 A3 00               CMPD   0,X   
+EC08   25 28                  BCS   LIST11   
+EC0A   34 06                  PSHS   D   
+EC0C   EC 81                  LDD   ,X++   
+EC0E   34 10                  PSHS   X   
+EC10   BD EB 5E               JSR   PRNT4   
+EC13   35 10                  PULS   X   
+EC15   86 20                  LDA   #SPACE   
+EC17   BD EC AA               JSR   PUTCHR   
+EC1A   BD E6 38               JSR   PUTSTR   
+EC1D   30 01                  LEAX   1,X   
+EC1F   34 10                  PSHS   X   
+EC21   BD E6 3F               JSR   CRLF   
+EC24   35 10                  PULS   X   
+EC26   BD EC 9C               JSR   TSTBRK   
+EC29   20 D4                  BRA   LIST09   
+EC2B   32 62        LIST10:   LEAS   2,S   
+EC2D   86 03                  LDA   #ETX   
+EC2F   BD EC AA               JSR   PUTCHR   
+EC32   9E 12        LIST11:   LDX   CURSOR   
+EC34   7E E6 FC               JMP   ENDS02   
+EC37                             ;******************************
+EC37                             ;******************************
+EC37   4C 45 54     VERBT:    DB   "LET"   
+EC3A   04                     FCB   EOL   
+EC3B   EA 42                  FDB   LET   
+EC3D   49 46                  DB   "IF"   
+EC3F   04                     FCB   EOL   
+EC40   EA 68                  FDB   IF   
+EC42   47 4F 54 4F            DB   "GOTO"   
+EC46   04                     FCB   EOL   
+EC47   EA 74                  FDB   GOTO   
+EC49   47 4F 53 55 42         DB   "GOSUB"   
+EC4E   04                     FCB   EOL   
+EC4F   EA 81                  FDB   GOSUB   
+EC51   52 45 54 55 52 4E      DB   "RETURN"   
+EC57   04                     FCB   EOL   
+EC58   EA 31                  FDB   RETURN   
+EC5A   50 4F 4B 45            DB   "POKE"   
+EC5E   04                     FCB   EOL   
+EC5F   E8 7C                  FDB   POKE   
+EC61   50 52 49 4E 54         DB   "PRINT"   
+EC66   04                     FCB   EOL   
+EC67   EA AC                  FDB   PRINT   
+EC69   49 4E 50 55 54         DB   "INPUT"   
+EC6E   04                     FCB   EOL   
+EC6F   EB 63                  FDB   INPUT   
+EC71   52 45 4D               DB   "REM"   
+EC74   04                     FCB   EOL   
+EC75   E6 F3                  FDB   REM   
+EC77   53 54 4F 50            DB   "STOP"   
+EC7B   04                     FCB   EOL   
+EC7C   EC E6                  FDB   END   
+EC7E   45 4E 44               DB   "END"   
+EC81   04                     FCB   EOL   
+EC82   EC E6                  FDB   END   
+EC84   52 55 4E               DB   "RUN"   
+EC87   04                     FCB   EOL   
+EC88   EB C1                  FDB   RUN   
+EC8A   4C 49 53 54            DB   "LIST"   
+EC8E   04                     FCB   EOL   
+EC8F   EB CF                  FDB   LIST   
+EC91   4E 45 57               DB   "NEW"   
+EC94   04                     FCB   EOL   
+EC95   E5 1F                  FDB   CLEAR   
+EC97   3F                     DB   "?"   
+EC98   04                     FCB   EOL   
+EC99   EA AC                  FDB   PRINT   
+EC9B   04                     FCB   EOL   
+EC9C                             ;******************************
+EC9C                             ;******************************
+EC9C   8D 2A        TSTBRK:   BSR   BRKEEE   
+EC9E   27 09                  BEQ   GETC05   
+ECA0   8D 0D        GETCHR:   BSR   INEEE   
+ECA2   81 03                  CMPA   #ETX   
+ECA4   26 03                  BNE   GETC05   
+ECA6   7E E6 67               JMP   BREAK   
+ECA9   39           GETC05:   RTS      
+ECAA   0C 1C        PUTCHR:   INC   ZONE   
+ECAC   7E EC B9               JMP   OUTEEE   
+ECAF                             ;******************************
+ECAF                             ;******************************
+ECAF   8D 17        INEEE:    BSR   BRKEEE   
+ECB1   27 FC                  BEQ   INEEE   
+ECB3   B6 83 FF               LDA   RECEV   
+ECB6   84 7F                  ANDA   #$7F   
+ECB8   39                     RTS      
+ECB9   34 02        OUTEEE:   PSHS   A   
+ECBB   B6 83 FE     OUT01:    LDA   TRCS   
+ECBE   85 02                  BITA   #TDRE   
+ECC0   27 F9                  BEQ   OUT01   
+ECC2   35 02                  PULS   A   
+ECC4   B7 83 FF               STA   TRANS   
+ECC7   39                     RTS      
+ECC8   34 02        BRKEEE:   PSHS   A   
+ECCA   B6 83 FE     BRK03:    LDA   TRCS   
+ECCD   85 20                  BITA   #ORFE   
+ECCF   27 05                  BEQ   BRK05   
+ECD1   B6 83 FF               LDA   RECEV   
+ECD4   20 F4                  BRA   BRK03   
+ECD6   85 01        BRK05:    BITA   #RDRF   
+ECD8   35 02                  PULS   A   
+ECDA   39                     RTS      
+ECDB                             ;*
+ECDB   86 03                  LDA   #CNTL1   
+ECDD   B7 83 FE               STA   RMCR   
+ECE0   86 15                  LDA   #CNTL2   
+ECE2   B7 83 FE               STA   TRCS   
+ECE5                INTEEE:   EQU   $   
+ECE5   39                     RTS      
+ECE6                             ;******************************
+ECE6                             ;******************************
+ECE6                END:         
+ECE6                             ; 
+ECE6                             ; 
+ECE6                             ; 
+FFF0                          .ORG   0xfff0   
+FFF0                             ;reserved
+FFF0   E0 12                  DW   reset   
+FFF2                             ;SWI3
+FFF2   E0 12                  DW   reset   
+FFF4                             ;SWI2
+FFF4   E0 12                  DW   reset   
+FFF6                             ;FIRQ
+FFF6   E0 12                  DW   reset   
+FFF8                             ;IRQ
+FFF8   E0 12                  DW   reset   
+FFFA                             ;SWI
+FFFA   E0 12                  DW   reset   
+FFFC                             ;NMI
+FFFC   E0 12                  DW   reset   
+FFFE                             ;RES
+FFFE   E0 12                  DW   reset   
+10000                            ; 
+10000                            ; 
+
+
+Q_ADD:              0000 DEFINED AT LINE 23
+                    > USED AT LINE 129
+                    > USED AT LINE 136
+                    > USED AT LINE 147
+                    > USED AT LINE 151
+                    > USED AT LINE 159
+                    > USED AT LINE 292
+                    > USED AT LINE 297
+                    > USED AT LINE 421
+                    > USED AT LINE 430
+                    > USED AT LINE 431
+                    > USED AT LINE 432
+                    > USED AT LINE 433
+                    > USED AT LINE 434
+                    > USED AT LINE 435
+                    > USED AT LINE 436
+                    > USED AT LINE 437
+                    > USED AT LINE 438
+                    > USED AT LINE 439
+Q_KEY:              0002 DEFINED AT LINE 24
+                    > USED AT LINE 451
+                    > USED AT LINE 453
+Q_HEXCNT:           0003 DEFINED AT LINE 25
+                    > USED AT LINE 99
+                    > USED AT LINE 109
+                    > USED AT LINE 312
+                    > USED AT LINE 326
+                    > USED AT LINE 332
+                    > USED AT LINE 340
+                    > USED AT LINE 354
+                    > USED AT LINE 361
+                    > USED AT LINE 369
+Q_HEXADD:           0004 DEFINED AT LINE 26
+                    > USED AT LINE 101
+                    > USED AT LINE 293
+                    > USED AT LINE 301
+                    > USED AT LINE 305
+                    > USED AT LINE 314
+                    > USED AT LINE 317
+                    > USED AT LINE 328
+                    > USED AT LINE 333
+                    > USED AT LINE 334
+                    > USED AT LINE 342
+                    > USED AT LINE 357
+                    > USED AT LINE 362
+                    > USED AT LINE 363
+                    > USED AT LINE 371
+Q_HEXADD2:          0006 DEFINED AT LINE 27
+                    > USED AT LINE 298
+                    > USED AT LINE 302
+                    > USED AT LINE 304
+                    > USED AT LINE 315
+                    > USED AT LINE 318
+Q_SUBR:             0008 DEFINED AT LINE 28
+                    > USED AT LINE 271
+                    > USED AT LINE 280
+RESET:              E012 DEFINED AT LINE 52
+                    > USED AT LINE 46
+                    > USED AT LINE 583
+                    > USED AT LINE 585
+                    > USED AT LINE 587
+                    > USED AT LINE 589
+                    > USED AT LINE 591
+                    > USED AT LINE 593
+                    > USED AT LINE 595
+                    > USED AT LINE 597
+WARM:               E021 DEFINED AT LINE 61
+MAINCRLF:           E034 DEFINED AT LINE 64
+                    > USED AT LINE 95
+                    > USED AT LINE 124
+                    > USED AT LINE 142
+MAIN:               E037 DEFINED AT LINE 66
+                    > USED AT LINE 116
+                    > USED AT LINE 179
+                    > USED AT LINE 241
+                    > USED AT LINE 243
+                    > USED AT LINE 245
+                    > USED AT LINE 276
+                    > USED AT LINE 285
+MAINSHORT:          E03A DEFINED AT LINE 68
+                    > USED AT LINE 73
+                    > USED AT LINE 75
+WHAT:               E06F DEFINED AT LINE 92
+M_HEX:              E07B DEFINED AT LINE 97
+                    > USED AT LINE 71
+                    > USED AT LINE 120
+M_HEX_LOOP:         E08C DEFINED AT LINE 105
+                    > USED AT LINE 110
+M_HEX_WAITEND:      E09A DEFINED AT LINE 113
+                    > USED AT LINE 118
+                    > USED AT LINE 121
+M_HEXEND:           E0AB DEFINED AT LINE 122
+                    > USED AT LINE 104
+M_MEM:              E0AD DEFINED AT LINE 127
+                    > USED AT LINE 80
+M_MEM_LINE:         E0B2 DEFINED AT LINE 130
+                    > USED AT LINE 146
+                    > USED AT LINE 149
+                    > USED AT LINE 154
+M_MEM_BACK:         E0E3 DEFINED AT LINE 150
+                    > USED AT LINE 144
+M_DUMP:             E0EC DEFINED AT LINE 157
+                    > USED AT LINE 82
+M_DUMP_LINE:        E0F4 DEFINED AT LINE 161
+                    > USED AT LINE 177
+                    > USED AT LINE 183
+M_DUMP_LOOP:        E0FF DEFINED AT LINE 166
+                    > USED AT LINE 172
+M_DUMP_WAIT:        E10F DEFINED AT LINE 174
+                    > USED AT LINE 181
+M_GO:               E126 DEFINED AT LINE 185
+                    > USED AT LINE 84
+M_U_FNEXT:          E12D DEFINED AT LINE 189
+                    > USED AT LINE 214
+                    > USED AT LINE 255
+M_U_FNEXT_E:        E143 DEFINED AT LINE 201
+                    > USED AT LINE 192
+                    > USED AT LINE 195
+                    > USED AT LINE 198
+M_USER:             E144 DEFINED AT LINE 204
+                    > USED AT LINE 86
+M_U_FIND:           E167 DEFINED AT LINE 213
+                    > USED AT LINE 233
+M_U_NEXT:           E18D DEFINED AT LINE 231
+                    > USED AT LINE 215
+M_U_SEL:            E1AD DEFINED AT LINE 238
+                    > USED AT LINE 263
+M_U_SELF:           E1CF DEFINED AT LINE 254
+                    > USED AT LINE 262
+M_U_SELN:           E1D9 DEFINED AT LINE 260
+                    > USED AT LINE 256
+M_U_FOUND:          E1E2 DEFINED AT LINE 264
+                    > USED AT LINE 258
+M_WRITEHEX:         E1E5 DEFINED AT LINE 269
+                    > USED AT LINE 90
+M_WRITESREC:        E201 DEFINED AT LINE 278
+                    > USED AT LINE 88
+M_WRBODY:           E21C DEFINED AT LINE 288
+                    > USED AT LINE 272
+                    > USED AT LINE 281
+M_WHL:              E23F DEFINED AT LINE 300
+                    > USED AT LINE 316
+                    > USED AT LINE 319
+M_WH10:             E24F DEFINED AT LINE 309
+                    > USED AT LINE 303
+M_WHX:              E251 DEFINED AT LINE 311
+                    > USED AT LINE 308
+M_WHEND:            E263 DEFINED AT LINE 320
+                    > USED AT LINE 306
+M_WHEXLINE:         E264 DEFINED AT LINE 323
+MWHLOOP:            E27E DEFINED AT LINE 336
+                    > USED AT LINE 341
+M_WSLINE:           E295 DEFINED AT LINE 349
+MWSLOOP:            E2B8 DEFINED AT LINE 365
+                    > USED AT LINE 370
+PRINTX:             E2CF DEFINED AT LINE 384
+                    > USED AT LINE 50
+                    > USED AT LINE 132
+                    > USED AT LINE 162
+                    > USED AT LINE 329
+                    > USED AT LINE 358
+PRINT2:             E2D6 DEFINED AT LINE 391
+                    > USED AT LINE 49
+                    > USED AT LINE 137
+                    > USED AT LINE 168
+                    > USED AT LINE 327
+                    > USED AT LINE 331
+                    > USED AT LINE 339
+                    > USED AT LINE 345
+                    > USED AT LINE 356
+                    > USED AT LINE 360
+                    > USED AT LINE 368
+                    > USED AT LINE 374
+                    > USED AT LINE 386
+PRINTHEX:           E2E3 DEFINED AT LINE 401
+                    > USED AT LINE 397
+                    > USED AT LINE 428
+PH2:                E2EC DEFINED AT LINE 406
+                    > USED AT LINE 403
+GETADDR:            E2F1 DEFINED AT LINE 411
+                    > USED AT LINE 128
+                    > USED AT LINE 158
+                    > USED AT LINE 186
+GET4:               E2FA DEFINED AT LINE 419
+                    > USED AT LINE 291
+                    > USED AT LINE 296
+GET4X:              E2FF DEFINED AT LINE 422
+                    > USED AT LINE 140
+                    > USED AT LINE 441
+GET4OK:             E305 DEFINED AT LINE 426
+                    > USED AT LINE 424
+GETHEX2:            E322 DEFINED AT LINE 445
+                    > USED AT LINE 98
+                    > USED AT LINE 102
+                    > USED AT LINE 106
+                    > USED AT LINE 459
+                    > USED AT LINE 461
+GETHEX4:            E331 DEFINED AT LINE 458
+                    > USED AT LINE 100
+GETHEX:             E340 DEFINED AT LINE 467
+                    > USED AT LINE 423
+                    > USED AT LINE 446
+                    > USED AT LINE 452
+GHB:                E347 DEFINED AT LINE 471
+                    > USED AT LINE 481
+                    > USED AT LINE 488
+                    > USED AT LINE 490
+GH1:                E34A DEFINED AT LINE 474
+                    > USED AT LINE 470
+GH2:                E351 DEFINED AT LINE 479
+                    > USED AT LINE 476
+GH3:                E35C DEFINED AT LINE 486
+                    > USED AT LINE 483
+ACIA:               83FE DEFINED AT LINE 497
+                    > USED AT LINE 498
+                    > USED AT LINE 499
+                    > USED AT LINE 500
+ACIAC:              83FE DEFINED AT LINE 498
+                    > USED AT LINE 56
+ACIAS:              83FE DEFINED AT LINE 499
+                    > USED AT LINE 521
+                    > USED AT LINE 562
+ACIAD:              83FF DEFINED AT LINE 500
+                    > USED AT LINE 524
+                    > USED AT LINE 565
+ACIA_TDRE:          0002 DEFINED AT LINE 502
+ACIA_RDRF:          0001 DEFINED AT LINE 503
+STROUT:             E367 DEFINED AT LINE 508
+                    > USED AT LINE 228
+                    > USED AT LINE 514
+SOUT2:              E36C DEFINED AT LINE 512
+                    > USED AT LINE 510
+SEROUT:             E372 DEFINED AT LINE 518
+                    > USED AT LINE 48
+                    > USED AT LINE 112
+                    > USED AT LINE 170
+                    > USED AT LINE 218
+                    > USED AT LINE 220
+                    > USED AT LINE 223
+                    > USED AT LINE 225
+                    > USED AT LINE 325
+                    > USED AT LINE 351
+                    > USED AT LINE 353
+                    > USED AT LINE 405
+                    > USED AT LINE 408
+                    > USED AT LINE 513
+                    > USED AT LINE 531
+                    > USED AT LINE 533
+                    > USED AT LINE 538
+                    > USED AT LINE 540
+                    > USED AT LINE 556
+SEROUTL:            E374 DEFINED AT LINE 520
+                    > USED AT LINE 523
+PCRLF:              E381 DEFINED AT LINE 529
+                    > USED AT LINE 65
+                    > USED AT LINE 131
+                    > USED AT LINE 160
+                    > USED AT LINE 173
+                    > USED AT LINE 229
+                    > USED AT LINE 299
+                    > USED AT LINE 346
+                    > USED AT LINE 375
+PROMPT:             E38B DEFINED AT LINE 536
+                    > USED AT LINE 67
+PRIMM:              E395 DEFINED AT LINE 547
+                    > USED AT LINE 51
+                    > USED AT LINE 62
+                    > USED AT LINE 93
+                    > USED AT LINE 133
+                    > USED AT LINE 138
+                    > USED AT LINE 163
+                    > USED AT LINE 205
+                    > USED AT LINE 235
+                    > USED AT LINE 274
+                    > USED AT LINE 283
+                    > USED AT LINE 289
+                    > USED AT LINE 294
+                    > USED AT LINE 412
+PRIMM1:             E399 DEFINED AT LINE 550
+                    > USED AT LINE 557
+PRIMM2:             E3A1 DEFINED AT LINE 555
+                    > USED AT LINE 552
+SERIN:              E3A6 DEFINED AT LINE 561
+                    > USED AT LINE 47
+                    > USED AT LINE 69
+                    > USED AT LINE 114
+                    > USED AT LINE 175
+                    > USED AT LINE 239
+                    > USED AT LINE 468
+                    > USED AT LINE 564
+MON_END:            E3B1 DEFINED AT LINE 568
+MRESET:             E000 DEFINED AT LINE 11 IN testmod.a09
+MSERIN:             E003 DEFINED AT LINE 12 IN testmod.a09
+MSEROUT:            E006 DEFINED AT LINE 13 IN testmod.a09
+MPRINT2:            E009 DEFINED AT LINE 14 IN testmod.a09
+MPRINTX:            E00C DEFINED AT LINE 15 IN testmod.a09
+MPRIMM:             E00F DEFINED AT LINE 16 IN testmod.a09
+TESTMOD:            E40F DEFINED AT LINE 19 IN testmod.a09
+                    > USED AT LINE 5 IN testmod.a09
+EOL:                0004 DEFINED AT LINE 18 IN basic.a09
+                    > USED AT LINE 127 IN basic.a09
+                    > USED AT LINE 232 IN basic.a09
+                    > USED AT LINE 235 IN basic.a09
+                    > USED AT LINE 238 IN basic.a09
+                    > USED AT LINE 241 IN basic.a09
+                    > USED AT LINE 244 IN basic.a09
+                    > USED AT LINE 560 IN basic.a09
+                    > USED AT LINE 563 IN basic.a09
+                    > USED AT LINE 566 IN basic.a09
+                    > USED AT LINE 568 IN basic.a09
+                    > USED AT LINE 966 IN basic.a09
+                    > USED AT LINE 1027 IN basic.a09
+                    > USED AT LINE 1030 IN basic.a09
+                    > USED AT LINE 1033 IN basic.a09
+                    > USED AT LINE 1036 IN basic.a09
+                    > USED AT LINE 1039 IN basic.a09
+                    > USED AT LINE 1042 IN basic.a09
+                    > USED AT LINE 1045 IN basic.a09
+                    > USED AT LINE 1048 IN basic.a09
+                    > USED AT LINE 1051 IN basic.a09
+                    > USED AT LINE 1054 IN basic.a09
+                    > USED AT LINE 1057 IN basic.a09
+                    > USED AT LINE 1060 IN basic.a09
+                    > USED AT LINE 1063 IN basic.a09
+                    > USED AT LINE 1066 IN basic.a09
+                    > USED AT LINE 1069 IN basic.a09
+                    > USED AT LINE 1071 IN basic.a09
+ETX:                0003 DEFINED AT LINE 19 IN basic.a09
+SPACE:              0020 DEFINED AT LINE 20 IN basic.a09
+CR:                 000D DEFINED AT LINE 21 IN basic.a09
+                    > USED AT LINE 227 IN basic.a09
+LF:                 000A DEFINED AT LINE 22 IN basic.a09
+                    > USED AT LINE 227 IN basic.a09
+BS:                 0008 DEFINED AT LINE 23 IN basic.a09
+CAN:                0018 DEFINED AT LINE 24 IN basic.a09
+BELL:               0007 DEFINED AT LINE 25 IN basic.a09
+FILL:               0000 DEFINED AT LINE 26 IN basic.a09
+DEL:                007F DEFINED AT LINE 27 IN basic.a09
+BSIZE:              0049 DEFINED AT LINE 28 IN basic.a09
+                    > USED AT LINE 48 IN basic.a09
+STKCUS:             0030 DEFINED AT LINE 29 IN basic.a09
+BACIA:              83FE DEFINED AT LINE 31 IN basic.a09
+                    > USED AT LINE 32 IN basic.a09
+                    > USED AT LINE 33 IN basic.a09
+                    > USED AT LINE 34 IN basic.a09
+                    > USED AT LINE 35 IN basic.a09
+RMCR:               83FE DEFINED AT LINE 32 IN basic.a09
+                    > USED AT LINE 1108 IN basic.a09
+TRCS:               83FE DEFINED AT LINE 33 IN basic.a09
+                    > USED AT LINE 1091 IN basic.a09
+                    > USED AT LINE 1098 IN basic.a09
+                    > USED AT LINE 1110 IN basic.a09
+RECEV:              83FF DEFINED AT LINE 34 IN basic.a09
+                    > USED AT LINE 1087 IN basic.a09
+                    > USED AT LINE 1101 IN basic.a09
+TRANS:              83FF DEFINED AT LINE 35 IN basic.a09
+                    > USED AT LINE 1095 IN basic.a09
+CNTL1:              0003 DEFINED AT LINE 36 IN basic.a09
+CNTL2:              0015 DEFINED AT LINE 37 IN basic.a09
+RDRF:               0001 DEFINED AT LINE 38 IN basic.a09
+ORFE:               0020 DEFINED AT LINE 39 IN basic.a09
+TDRE:               0002 DEFINED AT LINE 40 IN basic.a09
+LORAM:              0080 DEFINED AT LINE 43 IN basic.a09
+BUFFER:             0200 DEFINED AT LINE 44 IN basic.a09
+                    > USED AT LINE 48 IN basic.a09
+                    > USED AT LINE 49 IN basic.a09
+RAMSIZ:             2000 DEFINED AT LINE 45 IN basic.a09
+                    > USED AT LINE 49 IN basic.a09
+ROMADR:             F000 DEFINED AT LINE 46 IN basic.a09
+RAMBEG:             0249 DEFINED AT LINE 48 IN basic.a09
+RAMEND:             2200 DEFINED AT LINE 49 IN basic.a09
+RAMPAT:             AA0F DEFINED AT LINE 51 IN basic.a09
+ROMPAT:             F055 DEFINED AT LINE 52 IN basic.a09
+USRBAS:             000A DEFINED AT LINE 56 IN basic.a09
+                    > USED AT LINE 85 IN basic.a09
+                    > USED AT LINE 94 IN basic.a09
+                    > USED AT LINE 139 IN basic.a09
+                    > USED AT LINE 571 IN basic.a09
+                    > USED AT LINE 974 IN basic.a09
+USRTOP:             000C DEFINED AT LINE 57 IN basic.a09
+                    > USED AT LINE 86 IN basic.a09
+                    > USED AT LINE 112 IN basic.a09
+                    > USED AT LINE 135 IN basic.a09
+                    > USED AT LINE 148 IN basic.a09
+                    > USED AT LINE 158 IN basic.a09
+                    > USED AT LINE 180 IN basic.a09
+                    > USED AT LINE 182 IN basic.a09
+                    > USED AT LINE 183 IN basic.a09
+                    > USED AT LINE 187 IN basic.a09
+                    > USED AT LINE 190 IN basic.a09
+                    > USED AT LINE 313 IN basic.a09
+                    > USED AT LINE 572 IN basic.a09
+                    > USED AT LINE 1000 IN basic.a09
+STKLIM:             000E DEFINED AT LINE 58 IN basic.a09
+                    > USED AT LINE 87 IN basic.a09
+                    > USED AT LINE 113 IN basic.a09
+                    > USED AT LINE 159 IN basic.a09
+                    > USED AT LINE 184 IN basic.a09
+                    > USED AT LINE 188 IN basic.a09
+                    > USED AT LINE 520 IN basic.a09
+STKTOP:             0010 DEFINED AT LINE 59 IN basic.a09
+                    > USED AT LINE 78 IN basic.a09
+                    > USED AT LINE 82 IN basic.a09
+                    > USED AT LINE 91 IN basic.a09
+                    > USED AT LINE 406 IN basic.a09
+                    > USED AT LINE 969 IN basic.a09
+CURSOR:             0012 DEFINED AT LINE 60 IN basic.a09
+                    > USED AT LINE 95 IN basic.a09
+                    > USED AT LINE 134 IN basic.a09
+                    > USED AT LINE 141 IN basic.a09
+                    > USED AT LINE 193 IN basic.a09
+                    > USED AT LINE 201 IN basic.a09
+                    > USED AT LINE 327 IN basic.a09
+                    > USED AT LINE 332 IN basic.a09
+                    > USED AT LINE 336 IN basic.a09
+                    > USED AT LINE 429 IN basic.a09
+                    > USED AT LINE 431 IN basic.a09
+                    > USED AT LINE 551 IN basic.a09
+                    > USED AT LINE 794 IN basic.a09
+                    > USED AT LINE 797 IN basic.a09
+                    > USED AT LINE 817 IN basic.a09
+                    > USED AT LINE 824 IN basic.a09
+                    > USED AT LINE 932 IN basic.a09
+                    > USED AT LINE 948 IN basic.a09
+                    > USED AT LINE 982 IN basic.a09
+                    > USED AT LINE 985 IN basic.a09
+                    > USED AT LINE 989 IN basic.a09
+                    > USED AT LINE 997 IN basic.a09
+                    > USED AT LINE 998 IN basic.a09
+                    > USED AT LINE 1022 IN basic.a09
+SAVESP:             0014 DEFINED AT LINE 61 IN basic.a09
+                    > USED AT LINE 143 IN basic.a09
+                    > USED AT LINE 152 IN basic.a09
+                    > USED AT LINE 154 IN basic.a09
+                    > USED AT LINE 157 IN basic.a09
+                    > USED AT LINE 191 IN basic.a09
+                    > USED AT LINE 197 IN basic.a09
+                    > USED AT LINE 517 IN basic.a09
+                    > USED AT LINE 518 IN basic.a09
+LINENB:             0016 DEFINED AT LINE 62 IN basic.a09
+                    > USED AT LINE 97 IN basic.a09
+                    > USED AT LINE 248 IN basic.a09
+                    > USED AT LINE 310 IN basic.a09
+                    > USED AT LINE 311 IN basic.a09
+                    > USED AT LINE 317 IN basic.a09
+                    > USED AT LINE 826 IN basic.a09
+                    > USED AT LINE 830 IN basic.a09
+SCRTCH:             0018 DEFINED AT LINE 63 IN basic.a09
+                    > USED AT LINE 132 IN basic.a09
+                    > USED AT LINE 160 IN basic.a09
+                    > USED AT LINE 204 IN basic.a09
+                    > USED AT LINE 206 IN basic.a09
+                    > USED AT LINE 337 IN basic.a09
+                    > USED AT LINE 338 IN basic.a09
+                    > USED AT LINE 342 IN basic.a09
+                    > USED AT LINE 349 IN basic.a09
+                    > USED AT LINE 945 IN basic.a09
+                    > USED AT LINE 959 IN basic.a09
+CHAR:               001A DEFINED AT LINE 64 IN basic.a09
+                    > USED AT LINE 151 IN basic.a09
+                    > USED AT LINE 155 IN basic.a09
+                    > USED AT LINE 181 IN basic.a09
+                    > USED AT LINE 192 IN basic.a09
+                    > USED AT LINE 196 IN basic.a09
+                    > USED AT LINE 203 IN basic.a09
+                    > USED AT LINE 207 IN basic.a09
+                    > USED AT LINE 209 IN basic.a09
+                    > USED AT LINE 335 IN basic.a09
+                    > USED AT LINE 343 IN basic.a09
+                    > USED AT LINE 345 IN basic.a09
+                    > USED AT LINE 352 IN basic.a09
+                    > USED AT LINE 903 IN basic.a09
+                    > USED AT LINE 907 IN basic.a09
+                    > USED AT LINE 911 IN basic.a09
+ZONE:               001C DEFINED AT LINE 65 IN basic.a09
+                    > USED AT LINE 225 IN basic.a09
+                    > USED AT LINE 869 IN basic.a09
+                    > USED AT LINE 1081 IN basic.a09
+MODE:               001D DEFINED AT LINE 66 IN basic.a09
+                    > USED AT LINE 92 IN basic.a09
+                    > USED AT LINE 98 IN basic.a09
+                    > USED AT LINE 280 IN basic.a09
+                    > USED AT LINE 301 IN basic.a09
+RESRVD:             001E DEFINED AT LINE 67 IN basic.a09
+LOEND:              001F DEFINED AT LINE 68 IN basic.a09
+BASIC:              E500 DEFINED AT LINE 76 IN basic.a09
+WARMS:              E50D DEFINED AT LINE 78 IN basic.a09
+SETUP:              E515 DEFINED AT LINE 81 IN basic.a09
+                    > USED AT LINE 76 IN basic.a09
+SET03:              E519 DEFINED AT LINE 82 IN basic.a09
+CLEAR:              E51F DEFINED AT LINE 84 IN basic.a09
+                    > USED AT LINE 1067 IN basic.a09
+CLR02:              E526 DEFINED AT LINE 87 IN basic.a09
+WMS05:              E528 DEFINED AT LINE 88 IN basic.a09
+                    > USED AT LINE 80 IN basic.a09
+CMDB:               E531 DEFINED AT LINE 91 IN basic.a09
+                    > USED AT LINE 110 IN basic.a09
+                    > USED AT LINE 255 IN basic.a09
+CMDE:               E53D DEFINED AT LINE 96 IN basic.a09
+                    > USED AT LINE 108 IN basic.a09
+                    > USED AT LINE 124 IN basic.a09
+CMD01:              E54B DEFINED AT LINE 102 IN basic.a09
+                    > USED AT LINE 99 IN basic.a09
+CMD02:              E561 DEFINED AT LINE 111 IN basic.a09
+                    > USED AT LINE 104 IN basic.a09
+CMD03:              E56E DEFINED AT LINE 117 IN basic.a09
+                    > USED AT LINE 115 IN basic.a09
+CMD04:              E573 DEFINED AT LINE 119 IN basic.a09
+CMD05:              E580 DEFINED AT LINE 125 IN basic.a09
+                    > USED AT LINE 105 IN basic.a09
+                    > USED AT LINE 118 IN basic.a09
+                    > USED AT LINE 122 IN basic.a09
+VSTR:               E583 DEFINED AT LINE 126 IN basic.a09
+EDITOR:             E58E DEFINED AT LINE 130 IN basic.a09
+                    > USED AT LINE 123 IN basic.a09
+ED00:               E5A2 DEFINED AT LINE 139 IN basic.a09
+                    > USED AT LINE 136 IN basic.a09
+ED01:               E5A4 DEFINED AT LINE 140 IN basic.a09
+                    > USED AT LINE 138 IN basic.a09
+ED02:               E5AF DEFINED AT LINE 145 IN basic.a09
+                    > USED AT LINE 147 IN basic.a09
+ED03:               E5B5 DEFINED AT LINE 148 IN basic.a09
+                    > USED AT LINE 156 IN basic.a09
+ED35:               E5C7 DEFINED AT LINE 157 IN basic.a09
+                    > USED AT LINE 149 IN basic.a09
+ED04:               E5CD DEFINED AT LINE 160 IN basic.a09
+                    > USED AT LINE 142 IN basic.a09
+ED05:               E5D1 DEFINED AT LINE 162 IN basic.a09
+                    > USED AT LINE 165 IN basic.a09
+ED55:               E5DE DEFINED AT LINE 170 IN basic.a09
+                    > USED AT LINE 167 IN basic.a09
+ED06:               E5E2 DEFINED AT LINE 172 IN basic.a09
+                    > USED AT LINE 176 IN basic.a09
+ED07:               E606 DEFINED AT LINE 190 IN basic.a09
+                    > USED AT LINE 186 IN basic.a09
+ED08:               E608 DEFINED AT LINE 191 IN basic.a09
+                    > USED AT LINE 199 IN basic.a09
+ED09:               E61A DEFINED AT LINE 200 IN basic.a09
+                    > USED AT LINE 194 IN basic.a09
+ED10:               E622 DEFINED AT LINE 204 IN basic.a09
+                    > USED AT LINE 211 IN basic.a09
+PUTS01:             E633 DEFINED AT LINE 215 IN basic.a09
+                    > USED AT LINE 219 IN basic.a09
+PUTSTR:             E638 DEFINED AT LINE 217 IN basic.a09
+                    > USED AT LINE 90 IN basic.a09
+                    > USED AT LINE 224 IN basic.a09
+                    > USED AT LINE 253 IN basic.a09
+                    > USED AT LINE 942 IN basic.a09
+                    > USED AT LINE 1012 IN basic.a09
+CRLF:               E63F DEFINED AT LINE 223 IN basic.a09
+                    > USED AT LINE 88 IN basic.a09
+                    > USED AT LINE 93 IN basic.a09
+                    > USED AT LINE 245 IN basic.a09
+                    > USED AT LINE 254 IN basic.a09
+                    > USED AT LINE 258 IN basic.a09
+                    > USED AT LINE 285 IN basic.a09
+                    > USED AT LINE 863 IN basic.a09
+                    > USED AT LINE 943 IN basic.a09
+                    > USED AT LINE 1015 IN basic.a09
+CRLFST:             E647 DEFINED AT LINE 227 IN basic.a09
+ERRORF:             E64E DEFINED AT LINE 230 IN basic.a09
+                    > USED AT LINE 189 IN basic.a09
+                    > USED AT LINE 756 IN basic.a09
+                    > USED AT LINE 823 IN basic.a09
+ERRORS:             E656 DEFINED AT LINE 233 IN basic.a09
+                    > USED AT LINE 125 IN basic.a09
+                    > USED AT LINE 419 IN basic.a09
+                    > USED AT LINE 539 IN basic.a09
+                    > USED AT LINE 751 IN basic.a09
+                    > USED AT LINE 777 IN basic.a09
+                    > USED AT LINE 785 IN basic.a09
+                    > USED AT LINE 790 IN basic.a09
+                    > USED AT LINE 861 IN basic.a09
+                    > USED AT LINE 883 IN basic.a09
+                    > USED AT LINE 956 IN basic.a09
+                    > USED AT LINE 994 IN basic.a09
+ERRORR:             E65F DEFINED AT LINE 236 IN basic.a09
+                    > USED AT LINE 116 IN basic.a09
+                    > USED AT LINE 315 IN basic.a09
+                    > USED AT LINE 820 IN basic.a09
+BREAK:              E667 DEFINED AT LINE 239 IN basic.a09
+                    > USED AT LINE 1079 IN basic.a09
+ER01:               E674 DEFINED AT LINE 245 IN basic.a09
+                    > USED AT LINE 230 IN basic.a09
+                    > USED AT LINE 233 IN basic.a09
+                    > USED AT LINE 236 IN basic.a09
+                    > USED AT LINE 239 IN basic.a09
+GL00:               E68E DEFINED AT LINE 258 IN basic.a09
+                    > USED AT LINE 275 IN basic.a09
+GETLIN:             E690 DEFINED AT LINE 259 IN basic.a09
+                    > USED AT LINE 102 IN basic.a09
+                    > USED AT LINE 935 IN basic.a09
+GL03:               E693 DEFINED AT LINE 260 IN basic.a09
+                    > USED AT LINE 264 IN basic.a09
+                    > USED AT LINE 271 IN basic.a09
+                    > USED AT LINE 279 IN basic.a09
+                    > USED AT LINE 292 IN basic.a09
+GL04:               E6A7 DEFINED AT LINE 269 IN basic.a09
+                    > USED AT LINE 266 IN basic.a09
+GL02:               E6A9 DEFINED AT LINE 270 IN basic.a09
+                    > USED AT LINE 268 IN basic.a09
+                    > USED AT LINE 299 IN basic.a09
+                    > USED AT LINE 302 IN basic.a09
+GL05:               E6AE DEFINED AT LINE 272 IN basic.a09
+                    > USED AT LINE 262 IN basic.a09
+GL06:               E6C7 DEFINED AT LINE 284 IN basic.a09
+                    > USED AT LINE 281 IN basic.a09
+GL08:               E6CE DEFINED AT LINE 287 IN basic.a09
+                    > USED AT LINE 283 IN basic.a09
+GL07:               E6D6 DEFINED AT LINE 291 IN basic.a09
+                    > USED AT LINE 273 IN basic.a09
+GL09:               E6EB DEFINED AT LINE 300 IN basic.a09
+                    > USED AT LINE 277 IN basic.a09
+REM00:              E6F1 DEFINED AT LINE 305 IN basic.a09
+                    > USED AT LINE 308 IN basic.a09
+REM:                E6F3 DEFINED AT LINE 306 IN basic.a09
+                    > USED AT LINE 805 IN basic.a09
+                    > USED AT LINE 1052 IN basic.a09
+ENDSMT:             E6F9 DEFINED AT LINE 309 IN basic.a09
+                    > USED AT LINE 952 IN basic.a09
+ENDS02:             E6FC DEFINED AT LINE 310 IN basic.a09
+                    > USED AT LINE 547 IN basic.a09
+                    > USED AT LINE 798 IN basic.a09
+                    > USED AT LINE 832 IN basic.a09
+                    > USED AT LINE 876 IN basic.a09
+                    > USED AT LINE 1023 IN basic.a09
+REM05:              E702 DEFINED AT LINE 313 IN basic.a09
+                    > USED AT LINE 975 IN basic.a09
+NXTLIN:             E709 DEFINED AT LINE 316 IN basic.a09
+                    > USED AT LINE 314 IN basic.a09
+                    > USED AT LINE 812 IN basic.a09
+                    > USED AT LINE 828 IN basic.a09
+MSLINE:             E70D DEFINED AT LINE 318 IN basic.a09
+                    > USED AT LINE 109 IN basic.a09
+                    > USED AT LINE 804 IN basic.a09
+REM09:              E716 DEFINED AT LINE 322 IN basic.a09
+                    > USED AT LINE 312 IN basic.a09
+IMPLET:             E717 DEFINED AT LINE 323 IN basic.a09
+                    > USED AT LINE 320 IN basic.a09
+IFAN:               E71A DEFINED AT LINE 326 IN basic.a09
+                    > USED AT LINE 319 IN basic.a09
+FAN00:              E721 DEFINED AT LINE 329 IN basic.a09
+                    > USED AT LINE 357 IN basic.a09
+                    > USED AT LINE 553 IN basic.a09
+FAN04:              E72C DEFINED AT LINE 335 IN basic.a09
+                    > USED AT LINE 331 IN basic.a09
+FAN05:              E732 DEFINED AT LINE 338 IN basic.a09
+                    > USED AT LINE 347 IN basic.a09
+FAN07:              E74D DEFINED AT LINE 352 IN basic.a09
+                    > USED AT LINE 340 IN basic.a09
+FAN08:              E74F DEFINED AT LINE 353 IN basic.a09
+                    > USED AT LINE 355 IN basic.a09
+NXTNSP:             E759 DEFINED AT LINE 360 IN basic.a09
+                    > USED AT LINE 363 IN basic.a09
+SKIPSP:             E75B DEFINED AT LINE 361 IN basic.a09
+                    > USED AT LINE 106 IN basic.a09
+                    > USED AT LINE 131 IN basic.a09
+                    > USED AT LINE 306 IN basic.a09
+                    > USED AT LINE 326 IN basic.a09
+                    > USED AT LINE 395 IN basic.a09
+                    > USED AT LINE 413 IN basic.a09
+                    > USED AT LINE 423 IN basic.a09
+                    > USED AT LINE 436 IN basic.a09
+                    > USED AT LINE 449 IN basic.a09
+                    > USED AT LINE 536 IN basic.a09
+                    > USED AT LINE 550 IN basic.a09
+                    > USED AT LINE 598 IN basic.a09
+                    > USED AT LINE 605 IN basic.a09
+                    > USED AT LINE 615 IN basic.a09
+                    > USED AT LINE 646 IN basic.a09
+                    > USED AT LINE 655 IN basic.a09
+                    > USED AT LINE 672 IN basic.a09
+                    > USED AT LINE 745 IN basic.a09
+                    > USED AT LINE 757 IN basic.a09
+                    > USED AT LINE 774 IN basic.a09
+                    > USED AT LINE 787 IN basic.a09
+                    > USED AT LINE 838 IN basic.a09
+                    > USED AT LINE 854 IN basic.a09
+                    > USED AT LINE 872 IN basic.a09
+                    > USED AT LINE 936 IN basic.a09
+                    > USED AT LINE 949 IN basic.a09
+                    > USED AT LINE 960 IN basic.a09
+                    > USED AT LINE 986 IN basic.a09
+TSTHEX:             E762 DEFINED AT LINE 367 IN basic.a09
+                    > USED AT LINE 459 IN basic.a09
+TSTLTR:             E773 DEFINED AT LINE 378 IN basic.a09
+                    > USED AT LINE 396 IN basic.a09
+                    > USED AT LINE 400 IN basic.a09
+TST03:              E77B DEFINED AT LINE 382 IN basic.a09
+                    > USED AT LINE 370 IN basic.a09
+                    > USED AT LINE 372 IN basic.a09
+                    > USED AT LINE 379 IN basic.a09
+                    > USED AT LINE 387 IN basic.a09
+                    > USED AT LINE 389 IN basic.a09
+                    > USED AT LINE 401 IN basic.a09
+TSTDIG:             E77E DEFINED AT LINE 386 IN basic.a09
+                    > USED AT LINE 367 IN basic.a09
+                    > USED AT LINE 450 IN basic.a09
+                    > USED AT LINE 483 IN basic.a09
+TST05:              E788 DEFINED AT LINE 391 IN basic.a09
+                    > USED AT LINE 368 IN basic.a09
+                    > USED AT LINE 381 IN basic.a09
+TSTVAR:             E78B DEFINED AT LINE 395 IN basic.a09
+                    > USED AT LINE 732 IN basic.a09
+                    > USED AT LINE 783 IN basic.a09
+                    > USED AT LINE 929 IN basic.a09
+                    > USED AT LINE 954 IN basic.a09
+TSTV02:             E7A1 DEFINED AT LINE 407 IN basic.a09
+TSTV03:             E7A3 DEFINED AT LINE 408 IN basic.a09
+                    > USED AT LINE 397 IN basic.a09
+USER:               E7A4 DEFINED AT LINE 411 IN basic.a09
+                    > USED AT LINE 561 IN basic.a09
+USER02:             E7B6 DEFINED AT LINE 419 IN basic.a09
+                    > USED AT LINE 426 IN basic.a09
+USER03:             E7B9 DEFINED AT LINE 420 IN basic.a09
+                    > USED AT LINE 415 IN basic.a09
+USER05:             E7CB DEFINED AT LINE 428 IN basic.a09
+                    > USED AT LINE 418 IN basic.a09
+TSTSNB:             E7D6 DEFINED AT LINE 436 IN basic.a09
+                    > USED AT LINE 939 IN basic.a09
+TSN02:              E7E9 DEFINED AT LINE 446 IN basic.a09
+                    > USED AT LINE 441 IN basic.a09
+TSTNBR:             E7EA DEFINED AT LINE 449 IN basic.a09
+                    > USED AT LINE 103 IN basic.a09
+                    > USED AT LINE 438 IN basic.a09
+                    > USED AT LINE 440 IN basic.a09
+                    > USED AT LINE 739 IN basic.a09
+                    > USED AT LINE 978 IN basic.a09
+                    > USED AT LINE 992 IN basic.a09
+TSTN20:             E7F8 DEFINED AT LINE 455 IN basic.a09
+TSTN23:             E7FE DEFINED AT LINE 458 IN basic.a09
+                    > USED AT LINE 478 IN basic.a09
+TSTN02:             E821 DEFINED AT LINE 479 IN basic.a09
+                    > USED AT LINE 451 IN basic.a09
+TSTN03:             E827 DEFINED AT LINE 482 IN basic.a09
+                    > USED AT LINE 506 IN basic.a09
+TSTN07:             E854 DEFINED AT LINE 507 IN basic.a09
+                    > USED AT LINE 460 IN basic.a09
+                    > USED AT LINE 484 IN basic.a09
+TSTN09:             E858 DEFINED AT LINE 509 IN basic.a09
+                    > USED AT LINE 454 IN basic.a09
+TSTN11:             E85B DEFINED AT LINE 511 IN basic.a09
+                    > USED AT LINE 466 IN basic.a09
+                    > USED AT LINE 491 IN basic.a09
+                    > USED AT LINE 494 IN basic.a09
+                    > USED AT LINE 496 IN basic.a09
+                    > USED AT LINE 499 IN basic.a09
+                    > USED AT LINE 502 IN basic.a09
+TSTSTK:             E862 DEFINED AT LINE 517 IN basic.a09
+                    > USED AT LINE 185 IN basic.a09
+                    > USED AT LINE 567 IN basic.a09
+                    > USED AT LINE 754 IN basic.a09
+                    > USED AT LINE 821 IN basic.a09
+PEEK:               E86D DEFINED AT LINE 524 IN basic.a09
+                    > USED AT LINE 564 IN basic.a09
+POKE:               E87C DEFINED AT LINE 534 IN basic.a09
+                    > USED AT LINE 1043 IN basic.a09
+POKE05:             E88B DEFINED AT LINE 540 IN basic.a09
+                    > USED AT LINE 538 IN basic.a09
+TSTFUN:             E89E DEFINED AT LINE 550 IN basic.a09
+                    > USED AT LINE 741 IN basic.a09
+TSTF05:             E8AD DEFINED AT LINE 556 IN basic.a09
+                    > USED AT LINE 554 IN basic.a09
+FUNT:               E8AE DEFINED AT LINE 559 IN basic.a09
+FLINE:              E8C2 DEFINED AT LINE 571 IN basic.a09
+                    > USED AT LINE 810 IN basic.a09
+                    > USED AT LINE 818 IN basic.a09
+                    > USED AT LINE 999 IN basic.a09
+FNDLIN:             E8C4 DEFINED AT LINE 572 IN basic.a09
+                    > USED AT LINE 140 IN basic.a09
+                    > USED AT LINE 592 IN basic.a09
+FND03:              E8CB DEFINED AT LINE 576 IN basic.a09
+                    > USED AT LINE 573 IN basic.a09
+FND05:              E8D3 DEFINED AT LINE 580 IN basic.a09
+                    > USED AT LINE 577 IN basic.a09
+FND07:              E8DA DEFINED AT LINE 584 IN basic.a09
+                    > USED AT LINE 580 IN basic.a09
+FND09:              E8E0 DEFINED AT LINE 587 IN basic.a09
+                    > USED AT LINE 589 IN basic.a09
+RELEXP:             E8EC DEFINED AT LINE 595 IN basic.a09
+                    > USED AT LINE 801 IN basic.a09
+REL03:              E90C DEFINED AT LINE 611 IN basic.a09
+                    > USED AT LINE 602 IN basic.a09
+REL05:              E917 DEFINED AT LINE 616 IN basic.a09
+                    > USED AT LINE 607 IN basic.a09
+REL06:              E91B DEFINED AT LINE 618 IN basic.a09
+                    > USED AT LINE 600 IN basic.a09
+REL07:              E91F DEFINED AT LINE 620 IN basic.a09
+                    > USED AT LINE 610 IN basic.a09
+                    > USED AT LINE 617 IN basic.a09
+REL08:              E937 DEFINED AT LINE 634 IN basic.a09
+                    > USED AT LINE 632 IN basic.a09
+REL09:              E93D DEFINED AT LINE 638 IN basic.a09
+                    > USED AT LINE 636 IN basic.a09
+EXPR:               E943 DEFINED AT LINE 644 IN basic.a09
+                    > USED AT LINE 421 IN basic.a09
+                    > USED AT LINE 541 IN basic.a09
+                    > USED AT LINE 595 IN basic.a09
+                    > USED AT LINE 621 IN basic.a09
+                    > USED AT LINE 761 IN basic.a09
+                    > USED AT LINE 792 IN basic.a09
+                    > USED AT LINE 808 IN basic.a09
+                    > USED AT LINE 815 IN basic.a09
+                    > USED AT LINE 850 IN basic.a09
+EXPR02:             E952 DEFINED AT LINE 651 IN basic.a09
+                    > USED AT LINE 657 IN basic.a09
+EXPR03:             E954 DEFINED AT LINE 652 IN basic.a09
+                    > USED AT LINE 650 IN basic.a09
+EXPR04:             E956 DEFINED AT LINE 653 IN basic.a09
+                    > USED AT LINE 665 IN basic.a09
+EXPR05:             E965 DEFINED AT LINE 660 IN basic.a09
+                    > USED AT LINE 648 IN basic.a09
+EXPR06:             E96F DEFINED AT LINE 666 IN basic.a09
+                    > USED AT LINE 612 IN basic.a09
+                    > USED AT LINE 659 IN basic.a09
+TERM:               E972 DEFINED AT LINE 670 IN basic.a09
+                    > USED AT LINE 652 IN basic.a09
+                    > USED AT LINE 661 IN basic.a09
+TERM03:             E977 DEFINED AT LINE 672 IN basic.a09
+                    > USED AT LINE 712 IN basic.a09
+                    > USED AT LINE 729 IN basic.a09
+TERM05:             E985 DEFINED AT LINE 679 IN basic.a09
+                    > USED AT LINE 676 IN basic.a09
+DIV05:              E9A1 DEFINED AT LINE 693 IN basic.a09
+                    > USED AT LINE 704 IN basic.a09
+DIV07:              E9AB DEFINED AT LINE 698 IN basic.a09
+                    > USED AT LINE 694 IN basic.a09
+DIV09:              E9AD DEFINED AT LINE 699 IN basic.a09
+                    > USED AT LINE 697 IN basic.a09
+TERM06:             E9C2 DEFINED AT LINE 711 IN basic.a09
+                    > USED AT LINE 708 IN basic.a09
+TERM07:             E9C6 DEFINED AT LINE 713 IN basic.a09
+                    > USED AT LINE 674 IN basic.a09
+MULT:               E9CA DEFINED AT LINE 715 IN basic.a09
+FACT:               E9E5 DEFINED AT LINE 732 IN basic.a09
+                    > USED AT LINE 670 IN basic.a09
+                    > USED AT LINE 680 IN basic.a09
+                    > USED AT LINE 714 IN basic.a09
+FACT02:             E9F2 DEFINED AT LINE 738 IN basic.a09
+                    > USED AT LINE 740 IN basic.a09
+                    > USED AT LINE 742 IN basic.a09
+FACT03:             E9F3 DEFINED AT LINE 739 IN basic.a09
+                    > USED AT LINE 733 IN basic.a09
+PAREXP:             E9FD DEFINED AT LINE 743 IN basic.a09
+                    > USED AT LINE 524 IN basic.a09
+                    > USED AT LINE 534 IN basic.a09
+FACT05:             EA0D DEFINED AT LINE 751 IN basic.a09
+                    > USED AT LINE 748 IN basic.a09
+                    > USED AT LINE 759 IN basic.a09
+ARGONE:             EA10 DEFINED AT LINE 754 IN basic.a09
+                    > USED AT LINE 411 IN basic.a09
+                    > USED AT LINE 743 IN basic.a09
+FACT04:             EA18 DEFINED AT LINE 757 IN basic.a09
+                    > USED AT LINE 755 IN basic.a09
+ABSX:               EA24 DEFINED AT LINE 764 IN basic.a09
+                    > USED AT LINE 685 IN basic.a09
+                    > USED AT LINE 687 IN basic.a09
+NEGX:               EA28 DEFINED AT LINE 766 IN basic.a09
+                    > USED AT LINE 710 IN basic.a09
+NEG05:              EA30 DEFINED AT LINE 770 IN basic.a09
+                    > USED AT LINE 765 IN basic.a09
+                    > USED AT LINE 768 IN basic.a09
+TSTEOL:             EA31 DEFINED AT LINE 773 IN basic.a09
+                    > USED AT LINE 309 IN basic.a09
+                    > USED AT LINE 542 IN basic.a09
+                    > USED AT LINE 793 IN basic.a09
+                    > USED AT LINE 809 IN basic.a09
+                    > USED AT LINE 816 IN basic.a09
+                    > USED AT LINE 835 IN basic.a09
+                    > USED AT LINE 995 IN basic.a09
+TEOL03:             EA3D DEFINED AT LINE 778 IN basic.a09
+                    > USED AT LINE 776 IN basic.a09
+LET:                EA42 DEFINED AT LINE 783 IN basic.a09
+                    > USED AT LINE 323 IN basic.a09
+                    > USED AT LINE 1028 IN basic.a09
+LET03:              EA4A DEFINED AT LINE 786 IN basic.a09
+                    > USED AT LINE 784 IN basic.a09
+LET05:              EA56 DEFINED AT LINE 791 IN basic.a09
+                    > USED AT LINE 789 IN basic.a09
+IF:                 EA68 DEFINED AT LINE 801 IN basic.a09
+                    > USED AT LINE 1031 IN basic.a09
+IF03:               EA71 DEFINED AT LINE 805 IN basic.a09
+                    > USED AT LINE 803 IN basic.a09
+GOTO:               EA74 DEFINED AT LINE 808 IN basic.a09
+                    > USED AT LINE 1034 IN basic.a09
+GOSUB:              EA81 DEFINED AT LINE 815 IN basic.a09
+                    > USED AT LINE 1037 IN basic.a09
+GOSB04:             EA8D DEFINED AT LINE 820 IN basic.a09
+                    > USED AT LINE 811 IN basic.a09
+GOSB03:             EA90 DEFINED AT LINE 821 IN basic.a09
+                    > USED AT LINE 819 IN basic.a09
+GOSB05:             EA98 DEFINED AT LINE 824 IN basic.a09
+                    > USED AT LINE 822 IN basic.a09
+RETURN:             EA31 DEFINED AT LINE 835 IN basic.a09
+                    > USED AT LINE 1040 IN basic.a09
+PRINT:              EAAC DEFINED AT LINE 838 IN basic.a09
+                    > USED AT LINE 1046 IN basic.a09
+                    > USED AT LINE 1070 IN basic.a09
+PR01:               EAAF DEFINED AT LINE 839 IN basic.a09
+                    > USED AT LINE 874 IN basic.a09
+PR02:               EAC5 DEFINED AT LINE 850 IN basic.a09
+                    > USED AT LINE 846 IN basic.a09
+PR03:               EACE DEFINED AT LINE 854 IN basic.a09
+                    > USED AT LINE 849 IN basic.a09
+PR04:               EAE0 DEFINED AT LINE 862 IN basic.a09
+                    > USED AT LINE 844 IN basic.a09
+                    > USED AT LINE 860 IN basic.a09
+PR05:               EAE9 DEFINED AT LINE 866 IN basic.a09
+                    > USED AT LINE 840 IN basic.a09
+                    > USED AT LINE 856 IN basic.a09
+PR06:               EAEB DEFINED AT LINE 867 IN basic.a09
+                    > USED AT LINE 870 IN basic.a09
+PR07:               EAF4 DEFINED AT LINE 871 IN basic.a09
+                    > USED AT LINE 842 IN basic.a09
+                    > USED AT LINE 858 IN basic.a09
+PR08:               EAFD DEFINED AT LINE 875 IN basic.a09
+                    > USED AT LINE 865 IN basic.a09
+PRQ01:              EB02 DEFINED AT LINE 879 IN basic.a09
+                    > USED AT LINE 885 IN basic.a09
+PRNTQS:             EB05 DEFINED AT LINE 880 IN basic.a09
+                    > USED AT LINE 848 IN basic.a09
+PRQ03:              EB0E DEFINED AT LINE 884 IN basic.a09
+                    > USED AT LINE 882 IN basic.a09
+PRNTN:              EB13 DEFINED AT LINE 888 IN basic.a09
+                    > USED AT LINE 852 IN basic.a09
+PRN03:              EB23 DEFINED AT LINE 897 IN basic.a09
+                    > USED AT LINE 889 IN basic.a09
+PRN05:              EB26 DEFINED AT LINE 898 IN basic.a09
+                    > USED AT LINE 902 IN basic.a09
+PRN07:              EB32 DEFINED AT LINE 903 IN basic.a09
+                    > USED AT LINE 900 IN basic.a09
+                    > USED AT LINE 917 IN basic.a09
+                    > USED AT LINE 926 IN basic.a09
+PRN09:              EB34 DEFINED AT LINE 904 IN basic.a09
+                    > USED AT LINE 908 IN basic.a09
+PRN11:              EB3F DEFINED AT LINE 909 IN basic.a09
+                    > USED AT LINE 905 IN basic.a09
+PRN13:              EB53 DEFINED AT LINE 918 IN basic.a09
+                    > USED AT LINE 915 IN basic.a09
+PRNPT:              EB54 DEFINED AT LINE 919 IN basic.a09
+PRNPTO:             EB5C DEFINED AT LINE 923 IN basic.a09
+PRNT4:              EB5E DEFINED AT LINE 925 IN basic.a09
+                    > USED AT LINE 249 IN basic.a09
+                    > USED AT LINE 1008 IN basic.a09
+INPUT:              EB63 DEFINED AT LINE 929 IN basic.a09
+                    > USED AT LINE 1049 IN basic.a09
+IN03:               EB6C DEFINED AT LINE 933 IN basic.a09
+                    > USED AT LINE 938 IN basic.a09
+                    > USED AT LINE 944 IN basic.a09
+IN05:               EB74 DEFINED AT LINE 936 IN basic.a09
+                    > USED AT LINE 962 IN basic.a09
+                    > USED AT LINE 964 IN basic.a09
+IN07:               EB8B DEFINED AT LINE 945 IN basic.a09
+                    > USED AT LINE 940 IN basic.a09
+IN09:               EB9D DEFINED AT LINE 953 IN basic.a09
+                    > USED AT LINE 951 IN basic.a09
+IN11:               EBA4 DEFINED AT LINE 956 IN basic.a09
+                    > USED AT LINE 930 IN basic.a09
+IN13:               EBA7 DEFINED AT LINE 957 IN basic.a09
+                    > USED AT LINE 955 IN basic.a09
+RMESS:              EBB8 DEFINED AT LINE 965 IN basic.a09
+RUN:                EBC1 DEFINED AT LINE 969 IN basic.a09
+                    > USED AT LINE 1061 IN basic.a09
+RUN01:              EBC5 DEFINED AT LINE 971 IN basic.a09
+                    > USED AT LINE 973 IN basic.a09
+LIST:               EBCF DEFINED AT LINE 978 IN basic.a09
+                    > USED AT LINE 1064 IN basic.a09
+LIST03:             EBDC DEFINED AT LINE 985 IN basic.a09
+                    > USED AT LINE 979 IN basic.a09
+LIST05:             EBE9 DEFINED AT LINE 991 IN basic.a09
+                    > USED AT LINE 988 IN basic.a09
+LIST07:             EBF3 DEFINED AT LINE 995 IN basic.a09
+                    > USED AT LINE 984 IN basic.a09
+                    > USED AT LINE 990 IN basic.a09
+                    > USED AT LINE 993 IN basic.a09
+LIST09:             EBFF DEFINED AT LINE 1000 IN basic.a09
+                    > USED AT LINE 1018 IN basic.a09
+LIST10:             EC2B DEFINED AT LINE 1019 IN basic.a09
+                    > USED AT LINE 1001 IN basic.a09
+LIST11:             EC32 DEFINED AT LINE 1022 IN basic.a09
+                    > USED AT LINE 1004 IN basic.a09
+VERBT:              EC37 DEFINED AT LINE 1026 IN basic.a09
+TSTBRK:             EC9C DEFINED AT LINE 1074 IN basic.a09
+                    > USED AT LINE 318 IN basic.a09
+                    > USED AT LINE 1017 IN basic.a09
+GETCHR:             ECA0 DEFINED AT LINE 1076 IN basic.a09
+                    > USED AT LINE 260 IN basic.a09
+GETC05:             ECA9 DEFINED AT LINE 1080 IN basic.a09
+                    > USED AT LINE 1075 IN basic.a09
+                    > USED AT LINE 1078 IN basic.a09
+PUTCHR:             ECAA DEFINED AT LINE 1081 IN basic.a09
+                    > USED AT LINE 101 IN basic.a09
+                    > USED AT LINE 215 IN basic.a09
+                    > USED AT LINE 247 IN basic.a09
+                    > USED AT LINE 251 IN basic.a09
+                    > USED AT LINE 270 IN basic.a09
+                    > USED AT LINE 282 IN basic.a09
+                    > USED AT LINE 295 IN basic.a09
+                    > USED AT LINE 297 IN basic.a09
+                    > USED AT LINE 868 IN basic.a09
+                    > USED AT LINE 879 IN basic.a09
+                    > USED AT LINE 895 IN basic.a09
+                    > USED AT LINE 912 IN basic.a09
+                    > USED AT LINE 934 IN basic.a09
+                    > USED AT LINE 1011 IN basic.a09
+                    > USED AT LINE 1021 IN basic.a09
+INEEE:              ECAF DEFINED AT LINE 1085 IN basic.a09
+                    > USED AT LINE 1076 IN basic.a09
+                    > USED AT LINE 1086 IN basic.a09
+OUTEEE:             ECB9 DEFINED AT LINE 1090 IN basic.a09
+                    > USED AT LINE 1082 IN basic.a09
+OUT01:              ECBB DEFINED AT LINE 1091 IN basic.a09
+                    > USED AT LINE 1093 IN basic.a09
+BRKEEE:             ECC8 DEFINED AT LINE 1097 IN basic.a09
+                    > USED AT LINE 1074 IN basic.a09
+                    > USED AT LINE 1085 IN basic.a09
+BRK03:              ECCA DEFINED AT LINE 1098 IN basic.a09
+                    > USED AT LINE 1102 IN basic.a09
+BRK05:              ECD6 DEFINED AT LINE 1103 IN basic.a09
+                    > USED AT LINE 1100 IN basic.a09
+INTEEE:             ECE5 DEFINED AT LINE 1111 IN basic.a09
+                    > USED AT LINE 79 IN basic.a09
+                    > USED AT LINE 83 IN basic.a09
+END:                ECE6 DEFINED AT LINE 1118 IN basic.a09
+                    > USED AT LINE 1055 IN basic.a09
+                    > USED AT LINE 1058 IN basic.a09

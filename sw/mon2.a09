@@ -1,4 +1,4 @@
-; OMEN KILO monitor version 1.0
+; OMEN KILO monitor version 2.0
 ; (C) 2018 Martin Maly <maly@maly.cz>
 ; Published under the terms of MIT license
 
@@ -566,6 +566,8 @@ SERIN:
             RTS     
 
 MON_END     EQU     $ 
+
+      .include patreon.a80
 
 ; USER MODULES
 ; see testmod.a09 to further information
